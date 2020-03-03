@@ -1,0 +1,96 @@
+---
+title: "Data Science 3: Homework Assignment 1"
+author: "Patrik Szigeti"
+date: '03/03/2020'
+output: html_document
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, include = FALSE, message = FALSE, warning = FALSE}
+# Load libraries
+library(data.table)
+library(magrittr)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(xgboost)
+library(ranger)
+library(gbm)
+library(ISLR)
+library(skimr)
+library(ROCR)
+
+# Set the seed
+set.seed(1234)
+```
+
+# 1. Tree ensemble models
+
+```{r}
+# Read in the OJ dataset
+oj_data <- data.table(OJ)
+```
+
+```{r, include=FALSE}
+skim(oj_data)
+```
+
+Our goal is to predict `Purchase`, which is a factor with two possible outcomes: __CH__ (Citrus Hill) or __MM__ (Minute Maid) orange juices. We want to know which orange juice is picked in a certain situation. We have 1070 observations and 18 variables in the dataset.
+
+#### a. Create a training data of 75% and keep 25% of the data as a test set. Train a decision tree as a benchmark model. Plot the final model and interpret the result.
+
+* Create training data (75%) and test data (25%)
+
+```{r}
+train_indices <- createDataPartition(
+  y = oj_data[["Purchase"]],
+  times = 1,
+  p = 0.75,
+  list = FALSE
+)
+
+oj_data_train <- oj_data[train_indices, ]
+oj_data_test <- oj_data[-train_indices, ]
+```
+
+* Train a decision tree as the benchmark model
+
+```{r}
+train_control <- trainControl(
+  method = "repeatedcv",
+  number = 5,
+  repeats = 3
+)
+
+simple_tree_model <- train(
+  Purchase ~ .,
+  method = "rpart",
+  data = oj_data_train,
+  tuneGrid = data.frame(cp = c(0.01, 0.02, 0.05)),
+  trControl = train_control)
+simple_tree_model
+```
+
+* Plot the final model
+
+```{r fig.align="center"}
+rpart.plot(simple_tree_model[["finalModel"]])
+```
+
+The simple decision tree is considering three variables as splitting points: `LoyalCH` (customer brand loyalty for CH), `PriceDiff` (sale price of MM - sale price of CH) and `PriceMM` (price charged for MM). 
+
+* Not surprisingly, if someone is more loyal to CH, they tend to choose CH (in 56%) of the cases. And more than half of the customers will end up buying CH (53%), even if MM is singnificantly cheaper (by 0.39).
+* According to the benchmark model, among the 44% selecting MM at the first split point, `LoyalCH` is still an important factor, only 22% will definitely select MM of those who are less loyal to the CH brand.
+* If CH is cheaper (positive `PriceDiff`), 12% will buy it, with only 1% buying MM, given MM costs more (`PriceMM`) than 2.2. If the price difference is minimal or MM is cheaper, out of the 22% who are more loyal to CH, 9% would rather buy MM.
+
+#### b. Investigate tree ensemble models: random forest, gradient boosting machine, XGBoost. Try various tuning parameter combinations and select the best model using cross-validation.
+
+#### c. Compare different models with the resamples function (make sure to set the same seed before model training for all 3 models). Is any of these giving significantly different predictive power than the others?
+
+#### d. Choose the best model and plot ROC curve for the best model on the test set. Calculate and interpret AUC.
+
+#### e. Inspect variable importance plots for the 3 models. Are similar variables found to be the most important for the 3 models?
+
