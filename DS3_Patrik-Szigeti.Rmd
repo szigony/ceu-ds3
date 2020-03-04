@@ -1,7 +1,7 @@
 ---
 title: "Data Science 3: Homework Assignment 1"
 author: "Patrik Szigeti"
-date: '03/03/2020'
+date: '03/04/2020'
 output: html_document
 ---
 
@@ -22,9 +22,6 @@ library(gbm)
 library(ISLR)
 library(skimr)
 library(ROCR)
-
-# Set the seed
-set.seed(1234)
 ```
 
 # 1. Tree ensemble models
@@ -65,6 +62,7 @@ train_control <- trainControl(
   repeats = 3
 )
 
+set.seed(1234)
 simple_tree_model <- train(
   Purchase ~ .,
   method = "rpart",
@@ -80,17 +78,151 @@ simple_tree_model
 rpart.plot(simple_tree_model[["finalModel"]])
 ```
 
-The simple decision tree is considering three variables as splitting points: `LoyalCH` (customer brand loyalty for CH), `PriceDiff` (sale price of MM - sale price of CH) and `PriceMM` (price charged for MM). 
+The simple decision tree considers three variables as splitting points: `LoyalCH` (customer brand loyalty for CH), `PriceDiff` (sale price of MM - sale price of CH) and `SpecialCH` (indicator of special on CH).
 
-* Not surprisingly, if someone is more loyal to CH, they tend to choose CH (in 56%) of the cases. And more than half of the customers will end up buying CH (53%), even if MM is singnificantly cheaper (by 0.39).
-* According to the benchmark model, among the 44% selecting MM at the first split point, `LoyalCH` is still an important factor, only 22% will definitely select MM of those who are less loyal to the CH brand.
-* If CH is cheaper (positive `PriceDiff`), 12% will buy it, with only 1% buying MM, given MM costs more (`PriceMM`) than 2.2. If the price difference is minimal or MM is cheaper, out of the 22% who are more loyal to CH, 9% would rather buy MM.
+* Not surprisingly, if someone is more loyal to CH, they tend to choose CH (in 64% of the cases).
+* Out of the 32% whose loyalty to CH is less than 0.76 but greater than or equal to 0.45, 4% of the population will choose MM when CH costs more by at least 0.16, but 27% will stick by CH.
+* Out of the 36% who is less loyal to CH, only 3% will buy CH if there's a special sale on CH, 33% of the whole population isn't influenced by the sale, and will still buy MM.
 
 #### b. Investigate tree ensemble models: random forest, gradient boosting machine, XGBoost. Try various tuning parameter combinations and select the best model using cross-validation.
 
+* Random forest
+
+Since "variance" splitrule is only applicable to regression data, and this is a classification problem, I tried the three possible splitting rules from the `ranger` package: `gini`, `extratrees` and `hellinger` to determine which one performs best in this case.
+
+```{r}
+tune_grid_gini <- expand.grid(
+  .mtry = c(2, 3, 5, 7, 9, 11, 13, 15),
+  .splitrule = "gini",
+  .min.node.size = c(5, 10)
+)
+
+tune_grid_et <- expand.grid(
+  .mtry = c(2, 3, 5, 7, 9, 11, 13, 15),
+  .splitrule = "extratrees",
+  .min.node.size = c(5, 10)
+)
+
+tune_grid_h <- expand.grid(
+  .mtry = c(2, 3, 5, 7, 9, 11, 13, 15),
+  .splitrule = "hellinger",
+  .min.node.size = c(5,10)
+)
+
+# Random forest with "gini" splitrule
+set.seed(1234)
+rf_model_gini <- train(
+  Purchase ~ .,
+  method = "ranger",
+  data = oj_data_train,
+  trControl = train_control,
+  tuneGrid = tune_grid_gini,
+  importance = "impurity"
+)
+
+# Random forest with "extratrees" splitrule
+set.seed(1234)
+rf_model_et <- train(
+  Purchase ~ .,
+  method = "ranger",
+  data = oj_data_train,
+  trControl = train_control,
+  tuneGrid = tune_grid_et,
+  importance = "impurity")
+
+# Random forest with "hellinger" splitrule
+set.seed(1234)
+rf_model_h <- train(
+  Purchase ~ .,
+  method = "ranger",
+  data = oj_data_train,
+  trControl = train_control,
+  tuneGrid = tune_grid_h,
+  importance = "impurity")
+```
+
+Now let's see how they compare to each other.
+
+```{r}
+resamples(list("gini" = rf_model_gini, 
+               "extratrees" = rf_model_et, 
+               "hellinger" = rf_model_h)) %>% 
+  summary()
+```
+
+There are only small differences, but based on the mean accuracy, `extratrees` does slightly better than the default Gini-index, so I'll use that. `extratrees` basically splits nodes by choosing cut-points fully at random as described [here](http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.65.7485&rep=rep1&type=pdf).
+
+```{r}
+rf_model <- rf_model_et
+```
+
+* Gradient boosting machine
+
+```{r}
+gbm_grid <- expand.grid(
+  n.trees = c(750, 1000, 1250), 
+  interaction.depth = c(1, 2, 3), 
+  shrinkage = c(0.005, 0.01, 0.015, 0.02),
+  n.minobsinnode = c(1))
+
+set.seed(1234)
+gbm_model <- train(
+  Purchase ~ .,
+  method = "gbm",
+  data = oj_data_train,
+  trControl = train_control,
+  tuneGrid = gbm_grid,
+  verbose = FALSE)
+
+gbm_model
+```
+
+* XGBoost
+
+```{r}
+xgb_grid <- expand.grid(
+  nrounds = c(500, 1000),
+  max_depth = c(2, 3, 5),
+  eta = c(0.01, 0.05),
+  gamma = 0,
+  colsample_bytree = c(0.5, 0.7),
+  min_child_weight = 1,
+  subsample = c(0.5))
+
+set.seed(1234)
+xgboost_model <- train(
+  Purchase ~ .,
+  method = "xgbTree",
+  data = oj_data_train,
+  trControl = train_control,
+  tuneGrid = xgb_grid)
+
+xgboost_model
+```
+
 #### c. Compare different models with the resamples function (make sure to set the same seed before model training for all 3 models). Is any of these giving significantly different predictive power than the others?
 
+```{r}
+resamples_object <- resamples(list("simple_tree" = simple_tree_model,
+                                   "random_forest" = rf_model,
+                                   "gbm" = gbm_model,
+                                   "xgboost" = xgboost_model))
+summary(resamples_object)
+```
+
+Based on the mean accuracy, random forest has the worst predictive power out of the four models, but even that isn't significantly worse. It's interesting to see, however, that even the simple tree model performs better on the train dataset. GBM and XGBoost perform the best (both with 0.83 accuracy), but the trade-off for XGBoost's computational needs doesn't seem to be worth it, as GBM is slightly better. I'm selecting _GBM_ as the best predictor.
+
 #### d. Choose the best model and plot ROC curve for the best model on the test set. Calculate and interpret AUC.
+
+```{r}
+predicted_probabilities <- predict(gbm_model, newdata = oj_data_test, type = "prob")
+rocr_prediction <- prediction(predicted_probabilities[["MM"]], oj_data_test[["Purchase"]])
+plot(performance(rocr_prediction, "tpr", "fpr"), colorize = TRUE)
+```
+
+```{r}
+performance(rocr_prediction, measure = "auc")@y.values[[1]]
+```
 
 #### e. Inspect variable importance plots for the 3 models. Are similar variables found to be the most important for the 3 models?
 
