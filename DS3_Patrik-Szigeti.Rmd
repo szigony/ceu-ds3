@@ -256,3 +256,63 @@ The 6 most important variables are identical between GBM and XGBoost.
 
 Altogether, each of the three models operates with very similar variable importances with minor differences, with `LoyalCH` being the most important variable.
 
+# 2. Variable importance profiles
+
+```{r}
+hitters_data <- data.table(Hitters)
+hitters_data <- hitters_data[!is.na(Salary)]
+hitters_data[, log_salary := log(Salary)]
+hitters_data[, Salary := NULL]
+```
+
+#### a. Train two random forest models: one with mtry = 2 and another with mtry = 10 (use the whole dataset and don't use cross-validation). Inspect variable importance profiles. What do you see in terms of how important the first few variables are relative to each other?
+
+```{r}
+# mtry = 2
+tune_grid_mtry2 <- expand.grid(
+  .mtry = 2,
+  .splitrule = "variance",
+  .min.node.size = c(5, 10)
+)
+
+set.seed(1234)
+rf_model_mtry2 <- train(log_salary ~ .,
+                        method = "ranger",
+                        data = hitters_data,
+                        tuneGrid = tune_grid_mtry2,
+                        importance = "impurity")
+
+# mtry = 10
+tune_grid_mtry10 <- expand.grid(
+  .mtry = 10,
+  .splitrule = "variance",
+  .min.node.size = c(5, 10)
+)
+
+set.seed(1234)
+rf_model_mtry10 <- train(log_salary ~ .,
+                        method = "ranger",
+                        data = hitters_data,
+                        tuneGrid = tune_grid_mtry10,
+                        importance = "impurity")
+```
+
+* Variable importance of `mtry = 2`
+
+```{r fig.align="center"}
+plot(varImp(rf_model_mtry2))
+```
+
+The most important variables seem to be `CHits` (# of hits), `CAtBat` (# of times at bat), `CWalks` (# of walks), `CRuns` (# of runs) and `CRBI` (# of runs batted), all of which are related to overall career statistics. These variables are relatively close to each other in terms of importance.
+
+* Variable importance of `mtry = 10`
+
+```{r fig.align="center"}
+plot(varImp(rf_model_mtry10))
+```
+
+`CAtBat` and `CHits` are still on the top of the list alongside with `CRuns`, but there's a sudden drop afterwards, and even these three are distributed more spaciously. The top 5 is the same as it was for `mtry = 2`, but steps are considerably larger.
+
+#### b. One of them is more extreme in terms of how the most important and the next ones relate to each other. Give an intuitive explanation how mtry relates to relative importance of variables in random forest models.
+
+#### c. In the same vein, estimate two gbm models and set `bag.fraction` to 0.1 first and to 0.9 in the second. The `tuneGrid` should consist of the same values for the two models (a dataframe with one row): `n.trees = 500, interaction.depth = 5, shrinkage = 0.1, n.minobsinnode = 5`. Compare variable importance plots for the two models. What is the meaning of `bag.fraction`? Based on this, why is one variable importance profile more extreme than the other?
