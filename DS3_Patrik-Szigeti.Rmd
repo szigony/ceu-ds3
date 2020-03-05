@@ -42,6 +42,7 @@ Our goal is to predict `Purchase`, which is a factor with two possible outcomes:
 * Create training data (75%) and test data (25%)
 
 ```{r}
+set.seed(1234)
 train_indices <- createDataPartition(
   y = oj_data[["Purchase"]],
   times = 1,
@@ -214,15 +215,44 @@ Based on the mean accuracy, random forest has the worst predictive power out of 
 
 #### d. Choose the best model and plot ROC curve for the best model on the test set. Calculate and interpret AUC.
 
-```{r}
+```{r fig.align="center"}
 predicted_probabilities <- predict(gbm_model, newdata = oj_data_test, type = "prob")
 rocr_prediction <- prediction(predicted_probabilities[["MM"]], oj_data_test[["Purchase"]])
-plot(performance(rocr_prediction, "tpr", "fpr"), colorize = TRUE)
+plot(performance(rocr_prediction, "tpr", "fpr"), col = "black")
+abline(a = 0, b = 1, col = "#8AB63F")
 ```
 
 ```{r}
 performance(rocr_prediction, measure = "auc")@y.values[[1]]
 ```
 
+The green line represents a uniformative test where AUC = 0.5. The AUC of the GBM model is 0.903, which indicates that we can predict the type of orange juice a customer is going to buy pretty well, the model is capable of distinguishing between the two classes with more than a 90% chance.
+
 #### e. Inspect variable importance plots for the 3 models. Are similar variables found to be the most important for the 3 models?
+
+* Random forest
+
+```{r fig.align="center"}
+plot(varImp(rf_model))
+```
+
+The most important variable for the random forest is by far `LoyalCH`, which measures customer brand loyalty for CH. It's followed by `WeekofPurchase` and `StoreID`. Anything price-related is less important than these variables.
+
+* GBM
+
+```{r fig.align="center"}
+plot(varImp(gbm_model))
+```
+
+For the GBM model, `LoyalCH` is still the most important factor, however, `PriceDiff` preceeds `WeekofPurchase` and `Store ID`. With GBM, the order of `ListPriceDiff` and `SalePriceMM` are switched compared to the random forest.
+
+* XGBoost
+
+```{r fig.align="center"}
+plot(varImp(xgboost_model))
+```
+
+The 6 most important variables are identical between GBM and XGBoost.
+
+Altogether, each of the three models operates with very similar variable importances with minor differences, with `LoyalCH` being the most important variable.
 
