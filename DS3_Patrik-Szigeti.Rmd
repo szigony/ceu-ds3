@@ -373,3 +373,88 @@ plot(varImp(gbm_model_bf9))
 It all seem to return to "normal" with `bag.fraction = 0.9`, but `CAtBat` stuck out, with `CHits` and `CRuns` not even hitting the 40% importance mark. This is a more extreme plot, putting almost all emphasis on `CAtBat`.
 
 `bag.fraction` determines what portion of the sample is used to construct each of the trees. In case of 0.1, each tree is built based on 10% of the data, which leads to a behavior similar to that of `mtry = 2` from before. In a smaller portion of the data, any variable can gain significance and therefore weight, which will then in turn influence its overall importance. While when we're sampling 90% of the data, we're considering almost every aspect for each tree, only leaving out a small amount of observations. `CAtBat` seems to be very important for each of the trees, and therefore overshadows all other variables, just like in case of `mtry = 10`.
+
+# 3. Stacking
+
+```{r, include=FALSE}
+no_show_data <- fread("data/no-show-data.csv")
+
+# some data cleaning
+no_show_data[, c("PatientId", "AppointmentID", "Neighbourhood") := NULL]
+setnames(no_show_data, 
+         c("No-show", 
+           "Age", 
+           "Gender",
+           "ScheduledDay", 
+           "AppointmentDay",
+           "Scholarship",
+           "Hipertension",
+           "Diabetes",
+           "Alcoholism",
+           "Handcap",
+           "SMS_received"), 
+         c("no_show", 
+           "age", 
+           "gender", 
+           "scheduled_day", 
+           "appointment_day",
+           "scholarship",
+           "hypertension",
+           "diabetes",
+           "alcoholism",
+           "handicap",
+           "sms_received"))
+
+# for binary prediction, the target variable must be a factor
+no_show_data[, no_show := factor(no_show, levels = c("Yes", "No"))]
+no_show_data[, handicap := ifelse(handicap > 0, 1, 0)]
+
+# create new variables
+no_show_data[, gender := factor(gender)]
+no_show_data[, scholarship := factor(scholarship)]
+no_show_data[, hypertension := factor(hypertension)]
+no_show_data[, alcoholism := factor(alcoholism)]
+no_show_data[, handicap := factor(handicap)]
+
+no_show_data[, scheduled_day := as.Date(scheduled_day)]
+no_show_data[, appointment_day := as.Date(appointment_day)]
+no_show_data[, days_since_scheduled := as.integer(appointment_day - scheduled_day)]
+
+# clean up a little bit
+no_show_data <- no_show_data[age %between% c(0, 95)]
+no_show_data <- no_show_data[days_since_scheduled > -1]
+no_show_data[, c("scheduled_day", "appointment_day", "sms_received") := NULL]
+```
+
+```{r}
+library(h2o)
+h2o.init(max_mem_size = "8g")
+no_show_data <- as.h2o(no_show_data)
+```
+
+#### a. Create train / validation / test sets, cutting the data into 5% - 45% - 50% parts.
+
+```{r}
+splitted_data <- h2o.splitFrame(
+  no_show_data,
+  ratios = c(0.05, 0.5),
+  seed = 1234)
+
+no_show_data_train <- splitted_data[[1]]
+no_show_data_valid <- splitted_data[[2]]
+no_show_data_test <- splitted_data[[3]]
+```
+
+#### b. Train a benchmark model of your choice using `h2o` (such as random forest, gbm or glm) and evaluate it on the validation set.
+
+#### c. Build at least 4 models of __different families__ using cross validation, keeping cross validated predictions. One of the model families must be `deeplearning` (you can try, for example, different network topologies).
+
+#### d. Evaluate validation set performance of each model.
+
+#### e. How large are the correlations of predicted scores of the validation set produced by the base learners?
+
+#### f. Create a stacked ensemble model from the base learners. Experiment with at least two different ensembling meta learners.
+
+#### g. Evaluate ensembles on validation set. Did it improve prediction?
+
+#### h. Evaluate the best performing model on the test set. How does performance compare to that of the validation set?
