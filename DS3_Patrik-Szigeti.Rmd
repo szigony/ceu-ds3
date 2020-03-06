@@ -272,29 +272,33 @@ hitters_data[, Salary := NULL]
 tune_grid_mtry2 <- expand.grid(
   .mtry = 2,
   .splitrule = "variance",
-  .min.node.size = c(5, 10)
+  .min.node.size = 1
 )
 
 set.seed(1234)
-rf_model_mtry2 <- train(log_salary ~ .,
-                        method = "ranger",
-                        data = hitters_data,
-                        tuneGrid = tune_grid_mtry2,
-                        importance = "impurity")
+rf_model_mtry2 <- train(
+  log_salary ~ .,
+  method = "ranger",
+  data = hitters_data,
+  tuneGrid = tune_grid_mtry2,
+  importance = "impurity"
+)
 
 # mtry = 10
 tune_grid_mtry10 <- expand.grid(
   .mtry = 10,
   .splitrule = "variance",
-  .min.node.size = c(5, 10)
+  .min.node.size = 1
 )
 
 set.seed(1234)
-rf_model_mtry10 <- train(log_salary ~ .,
-                        method = "ranger",
-                        data = hitters_data,
-                        tuneGrid = tune_grid_mtry10,
-                        importance = "impurity")
+rf_model_mtry10 <- train(
+  log_salary ~ .,
+  method = "ranger",
+  data = hitters_data,
+  tuneGrid = tune_grid_mtry10,
+  importance = "impurity"
+)
 ```
 
 * Variable importance of `mtry = 2`
@@ -303,7 +307,7 @@ rf_model_mtry10 <- train(log_salary ~ .,
 plot(varImp(rf_model_mtry2))
 ```
 
-The most important variables seem to be `CHits` (# of hits), `CAtBat` (# of times at bat), `CWalks` (# of walks), `CRuns` (# of runs) and `CRBI` (# of runs batted), all of which are related to overall career statistics. These variables are relatively close to each other in terms of importance.
+The most important variables seem to be `CAtBat` (# of times at bat), `CRuns` (# of runs), `CHits` (# of hits), `CWalks` (# of walks) and `CRBI` (# of runs batted), all of which are related to overall career statistics. These variables are relatively close to each other in terms of importance.
 
 * Variable importance of `mtry = 10`
 
@@ -311,8 +315,61 @@ The most important variables seem to be `CHits` (# of hits), `CAtBat` (# of time
 plot(varImp(rf_model_mtry10))
 ```
 
-`CAtBat` and `CHits` are still on the top of the list alongside with `CRuns`, but there's a sudden drop afterwards, and even these three are distributed more spaciously. The top 5 is the same as it was for `mtry = 2`, but steps are considerably larger.
+`CAtBat` and `CHits` are still on the top of the list alongside with `CRuns`, but the steps are distributed more spaciously. The top 5 is the same as it was for `mtry = 2`, but with differing importance.
 
 #### b. One of them is more extreme in terms of how the most important and the next ones relate to each other. Give an intuitive explanation how mtry relates to relative importance of variables in random forest models.
 
+Splitting happens on the best possible variables at each step, and more important variables are selected more frequently, while less important variables will be left out more often. Since with `mtry = 2` we're sampling two variables out of all possible ones randomly, at a given decision point any one variable can be more important than another, giving otherwise less important variables bigger weights, and not letting especially important variables stick out. With `mtry = 10` however, out of the 19 variables that we have, we will always select 10 and assign weights to them, which means there's a bigger chance of selecting variables that are actually important from the model's perspective. This is why it's more apparent in the second case that `CAtBat` is the most important variable, it is being picked more times and thus given more emphasis than with a smaller `mtry`.
+
 #### c. In the same vein, estimate two gbm models and set `bag.fraction` to 0.1 first and to 0.9 in the second. The `tuneGrid` should consist of the same values for the two models (a dataframe with one row): `n.trees = 500, interaction.depth = 5, shrinkage = 0.1, n.minobsinnode = 5`. Compare variable importance plots for the two models. What is the meaning of `bag.fraction`? Based on this, why is one variable importance profile more extreme than the other?
+
+```{r}
+gbm_tune_grid <- expand.grid(
+  n.trees = 500,
+  interaction.depth = 5,
+  shrinkage = 0.1,
+  n.minobsinnode = 5
+)
+
+# bag.fraction = 0.1
+set.seed(1234)
+gbm_model_bf1 <- train(
+  log_salary ~ .,
+  method = "gbm",
+  data = hitters_data,
+  trControl = train_control,
+  tuneGrid = gbm_tune_grid,
+  bag.fraction = 0.1,
+  verbose = FALSE
+)
+
+# bag.fraction = 0.9
+set.seed(1234)
+gbm_model_bf9 <- train(
+  log_salary ~ .,
+  method = "gbm",
+  data = hitters_data,
+  trControl = train_control,
+  tuneGrid = gbm_tune_grid,
+  bag.fraction = 0.9,
+  verbose = FALSE
+)
+```
+
+* Variable importance of `bag.fraction = 0.1`
+
+```{r fig.align="center"}
+plot(varImp(gbm_model_bf1))
+```
+
+With `bag.fraction = 0.1` the variable importance plot is significantly different than it was in case of the random forests. Variables such as `PutOuts`, `Assists` and `Years` are ranked on top, whereas variables deemed important by RF are in lower positions.
+
+* Variable importance of `bag.fraction = 0.9`
+
+```{r fig.align="center"}
+plot(varImp(gbm_model_bf9))
+```
+
+It all seem to return to "normal" with `bag.fraction = 0.9`, but `CAtBat` stuck out, with `CHits` and `CRuns` not even hitting the 40% importance mark. This is a more extreme plot, putting almost all emphasis on `CAtBat`.
+
+`bag.fraction` determines what portion of the sample is used to construct each of the trees. In case of 0.1, each tree is built based on 10% of the data, which leads to a behavior similar to that of `mtry = 2` from before. In a smaller portion of the data, any variable can gain significance and therefore weight, which will then in turn influence its overall importance. While when we're sampling 90% of the data, we're considering almost every aspect for each tree, only leaving out a small amount of observations. `CAtBat` seems to be very important for each of the trees, and therefore overshadows all other variables, just like in case of `mtry = 10`.
