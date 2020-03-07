@@ -22,6 +22,7 @@ library(gbm)
 library(ISLR)
 library(skimr)
 library(ROCR)
+library(GGally)
 ```
 
 # 1. Tree ensemble models
@@ -447,40 +448,158 @@ no_show_data_test <- splitted_data[[3]]
 
 #### b. Train a benchmark model of your choice using `h2o` (such as random forest, gbm or glm) and evaluate it on the validation set.
 
+I trained a random forest model as my benchmark.
+
 ```{r}
 y <- "no_show"
 X <- setdiff(names(no_show_data_train), y)
 
-rf_params <- list(
-  ntrees = 1000,
-  mtries = c(2, 3, 5)
-)
-
 rf_grid <- h2o.grid(
-  x = X, 
-  y = y, 
+  x = X, y = y, 
   training_frame = no_show_data_train, 
   algorithm = "randomForest",
   nfolds = 5,
   seed = 1234,
-  hyper_params = rf_params
+  hyper_params = list(
+    ntrees = 1000,
+    mtries = c(2, 3, 5)
+  ),
+  keep_cross_validation_predictions = TRUE
 )
 
 # Best random forest model
 rf_model <- h2o.getModel(h2o.getGrid(rf_grid@grid_id)@model_ids[[1]])
 
 # Evaluate on the validation set
-h2o.rmse(h2o.performance(rf_model, newdata = no_show_data_valid))
+print(h2o.auc(h2o.performance(rf_model, newdata = no_show_data_valid)))
 ```
 
 #### c. Build at least 4 models of __different families__ using cross validation, keeping cross validated predictions. One of the model families must be `deeplearning` (you can try, for example, different network topologies).
 
+A random forest model has already been trained in the previous step, in this step, I'm training three additional base learners: GLM, GBM and deep learning.
+
+```{r}
+# GLM model
+glm_model <- h2o.glm(
+  X, y,
+  training_frame = no_show_data_train,
+  family = "binomial",
+  alpha = 1,
+  lambda_search = TRUE,
+  seed = 1234,
+  nfolds = 5, 
+  keep_cross_validation_predictions = TRUE
+)
+
+# GBM model
+gbm_model <- h2o.gbm(
+  X, y,
+  training_frame = no_show_data_train,
+  ntrees = 500, 
+  max_depth = 10, 
+  learn_rate = 0.1, 
+  seed = 1234,
+  nfolds = 5, 
+  keep_cross_validation_predictions = TRUE
+)
+
+# Deep learning model
+dl_model <- h2o.deeplearning(
+  X, y,
+  training_frame = no_show_data_train,
+  hidden = c(32, 8),
+  seed = 1234,
+  nfolds = 5, 
+  keep_cross_validation_predictions = TRUE
+)
+```
+
 #### d. Evaluate validation set performance of each model.
+
+```{r}
+validation_performances <- list(
+  "rf" = h2o.auc(h2o.performance(rf_model, newdata = no_show_data_valid)),
+  "glm" = h2o.auc(h2o.performance(glm_model, newdata = no_show_data_valid)),
+  "gbm" = h2o.auc(h2o.performance(gbm_model, newdata = no_show_data_valid)),
+  "dl" = h2o.auc(h2o.performance(dl_model, newdata = no_show_data_valid))
+)
+
+validation_performances
+```
+
+The validation set performance seems to be best for the random forest model, followed closely by the deep learning model. GBM is relatively close to these two in terms of AUC, but GLM is significantly worse.
 
 #### e. How large are the correlations of predicted scores of the validation set produced by the base learners?
 
+```{r}
+ensemble_model <- h2o.stackedEnsemble(
+  X, y,
+  training_frame = no_show_data_train,
+  base_models = list(
+    rf_model,
+    glm_model, 
+    gbm_model,
+    dl_model
+  ),
+  keep_levelone_frame = TRUE)
+
+level_1_features <- h2o.getFrame(ensemble_model@model$levelone_frame_id$name)
+
+level_1_dt <- as.data.table(level_1_features)[, 1:4]
+setnames(level_1_dt, c("rf", "glm", "gbm", "dl"))
+
+ggcorr(level_1_dt, label = TRUE, label_round = 2)
+```
+
+The correlation is highest between the random forest model and GBM based on the predictions on the validation set (0.88). GLM and GBM seem to mostly contradict each other, while the deep learning model's predictions correlate with each model about the same amount.
+
 #### f. Create a stacked ensemble model from the base learners. Experiment with at least two different ensembling meta learners.
+
+* Stacked ensemble model with `gbm` meta-learner
+
+```{r}
+ensemble_model_gbm <- h2o.stackedEnsemble(
+  X, y,
+  training_frame = no_show_data_train,
+  metalearner_algorithm = "gbm",
+  base_models = list(
+    rf_model,
+    glm_model, 
+    gbm_model,
+    dl_model
+  )
+)
+```
+
+* Stacked ensemble model with `deeplearning` meta-learner
+
+```{r}
+ensemble_model_dl <- h2o.stackedEnsemble(
+  X, y,
+  training_frame = no_show_data_train,
+  metalearner_algorithm = "deeplearning",
+  base_models = list(
+    rf_model,
+    glm_model, 
+    gbm_model,
+    dl_model
+  )
+)
+```
 
 #### g. Evaluate ensembles on validation set. Did it improve prediction?
 
+```{r}
+print(h2o.auc(h2o.performance(ensemble_model_gbm, newdata = no_show_data_valid)))
+print(h2o.auc(h2o.performance(ensemble_model_dl, newdata = no_show_data_valid)))
+```
+
+The ensemble model with `gbm` meta-learner still underperforms compared to the simple random forest model, the `deeplearning` meta-learner, however, helped improve performance. It shows more than 1% improvement compared to the base deep learning model, and performs better on the validation dataset than the random forest did.
+
 #### h. Evaluate the best performing model on the test set. How does performance compare to that of the validation set?
+
+```{r}
+print(h2o.auc(h2o.performance(ensemble_model_dl, newdata = no_show_data_test)))
+```
+
+The best performing model is the ensemble model with `deeplearning` meta-learner, which has about the same AUC on the test set, as it did on the validation set. The AUC of the model indicates that we have a better than 70% chance of predicting whether a patient will actually show up to their appointment.
