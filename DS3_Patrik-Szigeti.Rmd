@@ -447,6 +447,32 @@ no_show_data_test <- splitted_data[[3]]
 
 #### b. Train a benchmark model of your choice using `h2o` (such as random forest, gbm or glm) and evaluate it on the validation set.
 
+```{r}
+y <- "no_show"
+X <- setdiff(names(no_show_data_train), y)
+
+rf_params <- list(
+  ntrees = 1000,
+  mtries = c(2, 3, 5)
+)
+
+rf_grid <- h2o.grid(
+  x = X, 
+  y = y, 
+  training_frame = no_show_data_train, 
+  algorithm = "randomForest",
+  nfolds = 5,
+  seed = 1234,
+  hyper_params = rf_params
+)
+
+# Best random forest model
+rf_model <- h2o.getModel(h2o.getGrid(rf_grid@grid_id)@model_ids[[1]])
+
+# Evaluate on the validation set
+h2o.rmse(h2o.performance(rf_model, newdata = no_show_data_valid))
+```
+
 #### c. Build at least 4 models of __different families__ using cross validation, keeping cross validated predictions. One of the model families must be `deeplearning` (you can try, for example, different network topologies).
 
 #### d. Evaluate validation set performance of each model.
