@@ -326,4 +326,42 @@ names(ensemble_model_dl_results)[2] = c("score")
 
 h2o.exportFile(ensemble_model_dl_results, "data/online_news_popularity/predictions/ensemble_model_dl_results.csv", sep = ",")
 
-# Neural network prediction
+### Neural network prediction
+# caret
+tune_grid_nnet_1 <- expand.grid(
+  size = c(3, 5, 7, 10, 15),
+  decay = c(0.1, 0.5, 1, 1.5, 2, 2.5, 5)
+)
+
+set.seed(1234)
+nnet_model <- train(
+  is_popular ~ .,
+  method = "nnet",
+  data = data_train,
+  trControl = train_control,
+  tuneGrid = tune_grid_nnet_1,
+  preProcess = c("center", "scale", "pca"),
+  metric = "ROC",
+  trace = FALSE
+)
+nnet_model
+
+nnet_prediction <- prediction(
+  predict.train(
+    nnet_model, 
+    newdata = data_train,
+    type = "prob")$popular,
+  data_train$is_popular
+)
+performance(nnet_prediction, measure = "auc")@y.values[[1]]
+
+nnet_results_1 <- data.table(
+  article_id = data_test$article_id,
+  score = predict(
+    nnet_model, 
+    newdata = data_test, 
+    type = "prob", 
+    decision.values = TRUE)$popular
+)
+
+write.csv(nnet_results_1, "data/online_news_popularity/predictions/nnet_results_1.csv", row.names = FALSE)
