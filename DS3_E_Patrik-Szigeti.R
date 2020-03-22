@@ -5,29 +5,58 @@ library(caret)
 library(ggplot2)
 library(pROC)
 library(ROCR)
-library(tidyverse)
+library(caTools)
 
 # Set working directory
 setwd("C:/Users/szige/Desktop/CEU/2019-2020 Winter/Data Science 3 - ML2/Assignments/")
 
 ### Exploratory Data Analysis
-# Read in the train and the test datasets
-data_train <- fread("data/online_news_popularity/train.csv")
-data_test <- fread("data/online_news_popularity/test.csv")
+# Read in the train dataset
+raw_data_train <- fread("data/online_news_popularity/train.csv")
+raw_data_train$set <- "train"
+
+raw_data_test <- fread("data/online_news_popularity/test.csv")
+raw_data_test$set <- "test"
+raw_data_test$is_popular <- NA
+
+data <- rbind(raw_data_train, raw_data_test)
 
 ### Data Cleaning
+data$is_popular <- factor(data$is_popular, labels = c("not_popular", "popular"))
 
-data_train$is_popular <- factor(data_train$is_popular, labels = c("popular", "not_popular"))
+data$data_channel_is_lifestyle <- factor(data$data_channel_is_lifestyle)
+data$data_channel_is_entertainment <- factor(data$data_channel_is_entertainment)
+data$data_channel_is_bus <- factor(data$data_channel_is_bus)
+data$data_channel_is_socmed <- factor(data$data_channel_is_socmed)
+data$data_channel_is_tech <- factor(data$data_channel_is_tech)
+data$data_channel_is_world <- factor(data$data_channel_is_world)
+
+data$weekday_is_monday <- factor(data$weekday_is_monday)
+data$weekday_is_tuesday <- factor(data$weekday_is_tuesday)
+data$weekday_is_wednesday <- factor(data$weekday_is_wednesday)
+data$weekday_is_thursday <- factor(data$weekday_is_thursday)
+data$weekday_is_friday <- factor(data$weekday_is_friday)
+data$weekday_is_saturday <- factor(data$weekday_is_saturday)
+data$weekday_is_sunday <- factor(data$weekday_is_sunday)
+data$is_weekend <- NULL
+
+data_train <- subset(data, set == "train")
+data_train$set <- NULL
+
+data_test <- subset(data, set == "test")
+data_test$set <- NULL
+data_test$is_popular <- NULL
+
+rm(raw_data_test, raw_data_train, data)
 
 ### Predictions
 
 # Linear model prediction
 train_control <- trainControl(
-  method = "repeatedcv", 
+  method = "cv", 
   number = 5, 
-  repeats = 3,
-  savePredictions = TRUE,
-  classProbs = TRUE
+  classProbs = TRUE,
+  savePredictions = TRUE
 )
 
 set.seed(1234)
@@ -94,8 +123,9 @@ rf_results <- data.table(
 
 write.csv(rf_results, "data/online_news_popularity/predictions/rf_results.csv", row.names = FALSE)
 
-# Gradient boosting prediction
-gbm_grid <- expand.grid(
+### Gradient boosting prediction
+# GBM model 1
+gbm_grid_1 <- expand.grid(
   n.trees = 1000, 
   interaction.depth = 1, 
   shrinkage = 0.001,
@@ -103,37 +133,25 @@ gbm_grid <- expand.grid(
 )
 
 set.seed(1234)
-gbm_model <- train(
+gbm_model_1 <- train(
   is_popular ~ .,
   method = "gbm",
   data = data_train,
   trControl = train_control,
-  tuneGrid = gbm_grid,
+  tuneGrid = gbm_grid_1,
   verbose = FALSE
 )
 
-gbm_roc <- roc(
+gbm_roc_1 <- roc(
   predictor = predict(
-    gbm_model, 
+    gbm_model_1, 
     data_train, 
     type = "prob", 
     decision.values = TRUE)$popular, 
   response = data_train$is_popular
 )
-gbm_roc
-plot(gbm_roc)
 
-gbm_results <- data.table(
-  article_id = data_test$article_id,
-  score = predict(
-    gbm_model, 
-    newdata = data_test, 
-    type = "prob", 
-    decision.values = TRUE)$popular
-)
-
-write.csv(gbm_results, "data/online_news_popularity/predictions/gbm_results.csv", row.names = FALSE)
-
+# GBM model 2
 gbm_grid_2 <- expand.grid(
   n.trees = 500, 
   interaction.depth = 5, 
@@ -159,20 +177,8 @@ gbm_roc_2 <- roc(
     decision.values = TRUE)$popular, 
   response = data_train$is_popular
 )
-gbm_roc_2
-plot(gbm_roc_2)
 
-gbm_results_2 <- data.table(
-  article_id = data_test$article_id,
-  score = predict(
-    gbm_model_2, 
-    newdata = data_test, 
-    type = "prob", 
-    decision.values = TRUE)$popular
-)
-
-write.csv(gbm_results_2, "data/online_news_popularity/predictions/gbm_results_2.csv", row.names = FALSE)
-
+# GBM model 3
 gbm_grid_3 <- expand.grid(
   n.trees = 500, 
   interaction.depth = 10, 
@@ -198,10 +204,18 @@ gbm_roc_3 <- roc(
     decision.values = TRUE)$popular, 
   response = data_train$is_popular
 )
-gbm_roc_3
-plot(gbm_roc_3)
 
-gbm_results_3 <- data.table(
+# Select the best GBM model
+plot(gbm_roc_1)
+plot(gbm_roc_2, add = TRUE, col = "blue")
+plot(gbm_roc_3, add = TRUE, col = "green")
+
+print(paste("AUC of gbm_roc_1:", gbm_roc_1$auc))
+print(paste("AUC of gbm_roc_2:", gbm_roc_2$auc))
+print(paste("AUC of gbm_roc_3:", gbm_roc_3$auc))
+
+# Save the results of the best GBM model
+gbm_results <- data.table(
   article_id = data_test$article_id,
   score = predict(
     gbm_model_3, 
@@ -210,7 +224,7 @@ gbm_results_3 <- data.table(
     decision.values = TRUE)$popular
 )
 
-write.csv(gbm_results_3, "data/online_news_popularity/predictions/gbm_results_3.csv", row.names = FALSE)
+write.csv(gbm_results, "data/online_news_popularity/predictions/gbm_results.csv", row.names = FALSE)
 
 ###. H2O
 library(h2o)
@@ -221,10 +235,10 @@ data_train_h2o <- as.h2o(data_train)
 data_test_h2o <- as.h2o(data_test)
 
 y <- "is_popular"
-X <- setdiff(names(data_train_2), y)
+X <- setdiff(names(data_train_h2o), y)
 
 # Random forest
-rf_grid <- h2o.grid(
+rf_grid_h2o <- h2o.grid(
   x = X, y = y, 
   training_frame = data_train_h2o, 
   algorithm = "randomForest",
@@ -238,7 +252,7 @@ rf_grid <- h2o.grid(
 )
 
 rf_model_h2o <- h2o.getModel(
-  h2o.getGrid(rf_grid@grid_id)@model_ids[[1]]
+  h2o.getGrid(rf_grid_h2o@grid_id)@model_ids[[1]]
 )
 
 # GLM model
@@ -311,6 +325,5 @@ ensemble_model_dl_results <- h2o.cbind(
 names(ensemble_model_dl_results)[2] = c("score")
 
 h2o.exportFile(ensemble_model_dl_results, "data/online_news_popularity/predictions/ensemble_model_dl_results.csv", sep = ",")
-write.csv(ensemble_model_dl_results, "data/online_news_popularity/predictions/ensemble_model_dl_results", row.names = FALSE)
 
 # Neural network prediction
