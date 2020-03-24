@@ -5,7 +5,6 @@ library(caret)
 library(ggplot2)
 library(pROC)
 library(ROCR)
-library(caTools)
 
 # Set working directory
 setwd("C:/Users/szige/Desktop/CEU/2019-2020 Winter/Data Science 3 - ML2/Assignments/")
@@ -20,6 +19,11 @@ raw_data_test$set <- "test"
 raw_data_test$is_popular <- NA
 
 data <- rbind(raw_data_train, raw_data_test)
+
+skim(data)
+
+# n_unique_tokens: Rte of unique words in the content - should be between 0 and 1, removing 701
+data <- data[n_unique_tokens != 701, ]
 
 ### Data Cleaning
 data$is_popular <- factor(data$is_popular, labels = c("not_popular", "popular"))
@@ -40,9 +44,11 @@ data$weekday_is_saturday <- factor(data$weekday_is_saturday)
 data$weekday_is_sunday <- factor(data$weekday_is_sunday)
 data$is_weekend <- NULL
 
+# Re-create the train set
 data_train <- subset(data, set == "train")
 data_train$set <- NULL
 
+# Re-create the test set
 data_test <- subset(data, set == "test")
 data_test$set <- NULL
 data_test$is_popular <- NULL
@@ -229,13 +235,36 @@ write.csv(gbm_results, "data/online_news_popularity/predictions/gbm_results.csv"
 ###. H2O
 library(h2o)
 h2o.no_progress() # suppress progress bars in the outcome
-h2o.init(max_mem_size = "6g")
+h2o.init(max_mem_size = "8g")
 
 data_train_h2o <- as.h2o(data_train)
 data_test_h2o <- as.h2o(data_test)
 
 y <- "is_popular"
 X <- setdiff(names(data_train_h2o), y)
+
+# GLM model
+glm_grid_h2o <- h2o.grid(
+  x = X, y = y, 
+  training_frame = data_train_h2o, 
+  family = "binomial",
+  algorithm = "glm", 
+  lambda_search = TRUE, 
+  nfolds = 5,
+  seed = 1234,
+  hyper_params = list(
+    alpha = c(0, 0.25, 0.5, 0.75, 1)
+  ), 
+  keep_cross_validation_predictions = TRUE
+)
+
+glm_model_h2o <- h2o.getModel(
+  h2o.getGrid(
+    glm_grid_h2o@grid_id,
+    sort_by = "auc",
+    decreasing = TRUE
+  )@model_ids[[1]]
+)
 
 # Random forest
 rf_grid_h2o <- h2o.grid(
@@ -246,47 +275,69 @@ rf_grid_h2o <- h2o.grid(
   seed = 1234,
   hyper_params = list(
     ntrees = 500,
-    mtries = 5
-  ),
+    mtries = c(3, 5)
+  ), 
   keep_cross_validation_predictions = TRUE
 )
 
 rf_model_h2o <- h2o.getModel(
-  h2o.getGrid(rf_grid_h2o@grid_id)@model_ids[[1]]
-)
-
-# GLM model
-glm_model_h2o <- h2o.glm(
-  X, y,
-  training_frame = data_train_h2o,
-  family = "binomial",
-  alpha = 1,
-  lambda_search = TRUE,
-  seed = 1234,
-  nfolds = 5, 
-  keep_cross_validation_predictions = TRUE
+  h2o.getGrid(
+    rf_grid_h2o@grid_id,
+    sort_by = "auc",
+    decreasing = TRUE
+  )@model_ids[[1]]
 )
 
 # GBM model
-gbm_model_h2o <- h2o.gbm(
-  X, y,
+gbm_grid_h2o <- h2o.grid(
+  x = X, y = y,
   training_frame = data_train_h2o,
+  algorithm = "gbm",
   ntrees = 500, 
-  max_depth = 10, 
-  learn_rate = 0.1, 
   seed = 1234,
   nfolds = 5, 
+  hyper_params = list(
+    learn_rate = c(0.001, 0.01),
+    max_depth = c(5, 10),
+    sample_rate = c(0.7, 0.8),
+    col_sample_rate = c(0.7, 0.8)
+  ), 
   keep_cross_validation_predictions = TRUE
 )
 
+gbm_model_h2o <- h2o.getModel(
+  h2o.getGrid(
+    gbm_grid_h2o@grid_id,
+    sort_by = "auc",
+    decreasing = TRUE
+  )@model_ids[[1]]
+)
+
 # Deep learning model
-dl_model_h2o <- h2o.deeplearning(
-  X, y,
+dl_grid_h2o <- h2o.grid(
+  x = X, y = y,
   training_frame = data_train_h2o,
-  hidden = c(32, 8),
+  algorithm = "deeplearning",
   seed = 1234,
-  nfolds = 5, 
+  nfolds = 5,
+  epochs = 10,
+  stopping_metric = "misclassification",
+  stopping_tolerance = 1e-2,
+  stopping_rounds = 2,
+  hyper_params = list(
+    input_dropout_ratio = c(0, 0.05),
+    rate = c(0.01, 0.02),
+    hidden = list(c(32, 16, 8), c(32, 32))
+  ), 
   keep_cross_validation_predictions = TRUE
+)
+
+dl_model_h2o <- h2o.getModel(
+  h2o.getGrid(
+    dl_grid_h2o@grid_id,
+    sort_by = "auc",
+    decreasing = TRUE
+  )@model_ids[[1]]
 )
 
 validation_performances <- list(
@@ -326,8 +377,16 @@ names(ensemble_model_dl_results)[2] = c("score")
 
 h2o.exportFile(ensemble_model_dl_results, "data/online_news_popularity/predictions/ensemble_model_dl_results.csv", sep = ",")
 
+### AutoML
+automl_model_h2o <- h2o.automl(
+  x = X, y = y,
+  training_frame = data_train_h2o,
+  max_runtime_secs = 120
+)
+
+print(h2o.auc(h2o.performance(automl_model_h2o@leader, newdata = data_train_h2o)))
+
 ### Neural network prediction
-# caret
 tune_grid_nnet_1 <- expand.grid(
   size = c(3, 5, 7, 10, 15),
   decay = c(0.1, 0.5, 1, 1.5, 2, 2.5, 5)
