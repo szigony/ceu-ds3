@@ -1,0 +1,547 @@
+---
+title: "Data Science 3: Take Home Exam"
+author: "Patrik Szigeti"
+date: '03/28/2020'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, include=FALSE, message=FALSE, warning=FALSE}
+# Load libraries
+library(data.table)
+library(skimr)
+library(caret)
+library(ggplot2)
+library(pROC)
+library(ROCR)
+
+# Set working directory
+setwd("C:/Users/szige/Desktop/CEU/2019-2020 Winter/Data Science 3 - ML2/Assignments/")
+```
+
+# Exploratory Data Analysis
+
+```{r}
+# Read in the train and the test datasets
+raw_data_train <- fread("data/online_news_popularity/train.csv")
+raw_data_test <- fread("data/online_news_popularity/test.csv")
+
+skim(raw_data_train)
+```
+
+* By skimming the `raw_data_train` dataset, I can see that there are a lot of dummy variables that should be converted to factors (e.g. `data_channel_is_lifestyle` or `weekday_is_monday`). It's also apparent that the `is_weekend` variable doesn't add anything to the data, since we already have `weekday_is_saturday` and `weekday_is_sunday` that determines whether it's the weekend or not. 
+* There seems to be an extreme value in the `n_unique_tokens` variable, which is the rate of unique words in the content, and should be a value between 0 and 1.
+* My goal is to predict `is_popular` as a value between 0 and 1 to find out which articles will be shared the most.
+
+# Data Cleaning
+
+In order to avoid duplicate work, I'm merging the train and the test data set for data wrangling.
+
+```{r}
+# Add a set flag to both the train and the test set
+raw_data_train$set <- "train"
+raw_data_test$set <- "test"
+
+# Add is_popular as NA to the test set for merging
+raw_data_test$is_popular <- NA
+
+# Merge the datasets
+data <- rbind(raw_data_train, raw_data_test)
+
+# Remove the outlier from n_unique_tokens
+data <- data[n_unique_tokens != 701, ]
+
+# Set the dummy variables as factors and remove is_weekend
+data$data_channel_is_lifestyle <- factor(data$data_channel_is_lifestyle)
+data$data_channel_is_entertainment <- factor(data$data_channel_is_entertainment)
+data$data_channel_is_bus <- factor(data$data_channel_is_bus)
+data$data_channel_is_socmed <- factor(data$data_channel_is_socmed)
+data$data_channel_is_tech <- factor(data$data_channel_is_tech)
+data$data_channel_is_world <- factor(data$data_channel_is_world)
+
+data$weekday_is_monday <- factor(data$weekday_is_monday)
+data$weekday_is_tuesday <- factor(data$weekday_is_tuesday)
+data$weekday_is_wednesday <- factor(data$weekday_is_wednesday)
+data$weekday_is_thursday <- factor(data$weekday_is_thursday)
+data$weekday_is_friday <- factor(data$weekday_is_friday)
+data$weekday_is_saturday <- factor(data$weekday_is_saturday)
+data$weekday_is_sunday <- factor(data$weekday_is_sunday)
+data$is_weekend <- NULL
+
+# Set is_popular as a factor with labels 'popular' and 'not_popular'
+data$is_popular <- factor(data$is_popular, labels = c("not_popular", "popular"))
+
+# Re-create the train set
+data_train <- subset(data, set == "train")
+data_train$set <- NULL
+
+# Re-create the test set
+data_test <- subset(data, set == "test")
+data_test$set <- NULL
+data_test$is_popular <- NULL
+
+# Remove all dataframes but data_train and data_test
+rm(raw_data_test, raw_data_train, data)
+```
+
+# Predictions
+
+### Linear Model Prediction
+
+For the linear prediction I'm using 5-fold cross-validation, and training my model with `glm` method.
+
+```{r, warning=FALSE}
+train_control <- trainControl(
+  method = "cv",
+  number = 5,
+  classProbs = TRUE,
+  savePredictions = TRUE
+)
+
+set.seed(1234)
+linear_model <- train(
+  is_popular ~ .,
+  data = data_train,
+  preProcess = c("center", "scale"),
+  method = "glm",
+  trControl = train_control
+)
+
+lm_roc <- roc(
+  predictor = predict(
+    linear_model,
+    data_train,
+    type = "prob",
+    decision.values = TRUE)$popular,
+  response = data_train$is_popular
+)
+```
+
+```{r fig.align="center"}
+plot(lm_roc)
+```
+
+```{r}
+lm_roc$auc
+```
+
+The AUC for my linear model is 0.6979, which will serve as the baseline model.
+
+```{r, include=FALSE}
+# Save the results with article_id and score to a csv
+linear_results <- data.table(
+  article_id = data_test$article_id,
+  score = predict(
+    linear_model,
+    data_test,
+    type = "prob",
+    decision.values = TRUE)$popular
+)
+
+write.csv(linear_results, "data/online_news_popularity/predictions/linear_results.csv", row.names = FALSE)
+```
+
+> The linear model prediction's AUC was __0.67836__ on Kaggle.
+
+### Random Forest Prediction
+
+For my baseline random forest, I'm experimenting with different number of variables randomly sampled at each split (`mtry = c(2, 3, 5, 8`) and different minimum node sizes (`min.node.size = c(5, 10)`).
+
+```{r}
+tune_grid <- expand.grid(
+  .mtry = c(2, 3, 5, 8),
+  .splitrule = "gini",
+  .min.node.size = c(5, 10)
+)
+
+set.seed(1234)
+rf_model <- train(
+  is_popular ~ .,
+  method = "ranger",
+  data = data_train,
+  trControl = train_control,
+  tuneGrid = tune_grid,
+  importance = "impurity"
+)
+
+predicted_probabilities <- predict(rf_model, newdata = data_train, type = "prob")
+rocr_prediction <- prediction(predicted_probabilities[["popular"]], data_train[["is_popular"]])
+plot(performance(rocr_prediction, "tpr", "fpr"), col = "black")
+abline(a = 0, b = 1, col = "#8AB63F")
+```
+
+As we can see from the ROC curve, the AUC of the random forest prediction is 1 or very close to 1, which means it has a 100% accuracy in-sample, and is over-fitted. This tends to happen when the target of the random forest is a factor variable. The random forest model can still serve as a good base model for an ensemble model later on, but due to its over-fitting nature, it's not particularly reliable in itself.
+
+```{r, include=FALSE}
+# Save the results with article_id and score to a csv
+rf_results <- data.table(
+  article_id = data_test$article_id,
+  score = predict(
+    rf_model,
+    newdata = data_test,
+    type = "prob",
+    decision.values = TRUE)$popular
+)
+
+write.csv(rf_results, "data/online_news_popularity/predictions/rf_results.csv", row.names = FALSE)
+```
+
+> The random forest prediction's AUC was __0.69660__ on Kaggle.
+
+### Gradient Boosting Prediction
+
+Due to the computational power needed for gradient boosting, instead of tuning parameters in a grid, I built three separate GBM models with differing inputs for number of trees, interaction depth, shrinkage and minimum obeservations in a node:
+
+Model  | `n.trees` | `interaction.depth` | `shrinkage` | `n.minobsinnode` 
+------------- | ------------- | ------------- | ------------- | ------------- 
+`gbm_model_1` | 1000 | 1 | 0.001 | 1
+`gbm_model_2` | 500 | 5 | 0.1 | 5
+`gbm_model_3` | 500 | 10 | 0.1 | 5
+
+#### GBM Model 1
+
+```{r}
+gbm_grid_1 <- expand.grid(
+  n.trees = 1000, 
+  interaction.depth = 1, 
+  shrinkage = 0.001,
+  n.minobsinnode = 1
+)
+
+set.seed(1234)
+gbm_model_1 <- train(
+  is_popular ~ .,
+  method = "gbm",
+  data = data_train,
+  trControl = train_control,
+  tuneGrid = gbm_grid_1,
+  verbose = FALSE
+)
+
+gbm_roc_1 <- roc(
+  predictor = predict(
+    gbm_model_1, 
+    data_train, 
+    type = "prob", 
+    decision.values = TRUE)$popular, 
+  response = data_train$is_popular
+)
+```
+
+#### GBM Model 2
+
+```{r}
+gbm_grid_2 <- expand.grid(
+  n.trees = 500, 
+  interaction.depth = 5, 
+  shrinkage = 0.1,
+  n.minobsinnode = 5
+)
+
+set.seed(1234)
+gbm_model_2 <- train(
+  is_popular ~ .,
+  method = "gbm",
+  data = data_train,
+  trControl = train_control,
+  tuneGrid = gbm_grid_2,
+  verbose = FALSE
+)
+
+gbm_roc_2 <- roc(
+  predictor = predict(
+    gbm_model_2, 
+    data_train, 
+    type = "prob", 
+    decision.values = TRUE)$popular, 
+  response = data_train$is_popular
+)
+```
+
+#### GBM Model 3
+
+```{r}
+gbm_grid_3 <- expand.grid(
+  n.trees = 500, 
+  interaction.depth = 10, 
+  shrinkage = 0.1,
+  n.minobsinnode = 5
+)
+
+set.seed(1234)
+gbm_model_3 <- train(
+  is_popular ~ .,
+  method = "gbm",
+  data = data_train,
+  trControl = train_control,
+  tuneGrid = gbm_grid_3,
+  verbose = FALSE
+)
+
+gbm_roc_3 <- roc(
+  predictor = predict(
+    gbm_model_3, 
+    data_train, 
+    type = "prob", 
+    decision.values = TRUE)$popular, 
+  response = data_train$is_popular
+)
+```
+
+#### Select the Best GBM Model
+
+```{r fig.align="center"}
+plot(gbm_roc_1)
+plot(gbm_roc_2, add = TRUE, col = "blue")
+plot(gbm_roc_3, add = TRUE, col = "green")
+```
+
+```{r}
+print(paste("AUC of gbm_roc_1:", gbm_roc_1$auc))
+print(paste("AUC of gbm_roc_2:", gbm_roc_2$auc))
+print(paste("AUC of gbm_roc_3:", gbm_roc_3$auc))
+```
+
+Out of the three, the third GBM model has the highest AUC, and was therefore selected for my submission.
+
+```{r, include=FALSE}
+# Save the results of the best GBM model
+gbm_results <- data.table(
+  article_id = data_test$article_id,
+  score = predict(
+    gbm_model_3, 
+    newdata = data_test, 
+    type = "prob", 
+    decision.values = TRUE)$popular
+)
+
+write.csv(gbm_results, "data/online_news_popularity/predictions/gbm_results.csv", row.names = FALSE)
+```
+
+> The best gradient boosting prediction's AUC was __0.69692__ on Kaggle.
+
+### Neural Network Prediction
+
+For my neural network prediction, I specified two hyper-parameters:
+
+* The number of units in the hidden layer (`size = c(3, 5, 7, 10, 15)`)
+* And a regularization parameter to avoid over-fitting (`decay = c(0.1, 0.5, 1, 1.5, 2, 2.5, 5)`)
+
+```{r, warning=FALSE}
+tune_grid_nnet <- expand.grid(
+  size = c(3, 5, 7, 10, 15),
+  decay = c(0.1, 0.5, 1, 1.5, 2, 2.5, 5)
+)
+
+set.seed(1234)
+nnet_model <- train(
+  is_popular ~ .,
+  method = "nnet",
+  data = data_train,
+  trControl = train_control,
+  tuneGrid = tune_grid_nnet,
+  preProcess = c("center", "scale", "pca"),
+  metric = "ROC",
+  trace = FALSE
+)
+
+nnet_prediction <- prediction(
+  predict.train(
+    nnet_model, 
+    newdata = data_train,
+    type = "prob")$popular,
+  data_train$is_popular
+)
+performance(nnet_prediction, measure = "auc")@y.values[[1]]
+```
+
+The AUC for the neural network prediction is 0.7142, which is an improvement compared to the previous models.
+
+```{r, include=FALSE}
+# Save the neural net results
+nnet_results <- data.table(
+  article_id = data_test$article_id,
+  score = predict(
+    nnet_model, 
+    newdata = data_test, 
+    type = "prob", 
+    decision.values = TRUE)$popular
+)
+
+write.csv(nnet_results, "data/online_news_popularity/predictions/nnet_results.csv", row.names = FALSE)
+```
+
+> The neural network prediction's AUC was __0.68940__ on Kaggle.
+
+### Ensemble Model
+
+```{r}
+# Initialize H2O
+library(h2o)
+h2o.no_progress() # suppress progress bars in the outcome
+h2o.init(max_mem_size = "8g")
+
+# Create H2O datasets
+data_train_h2o <- as.h2o(data_train)
+data_test_h2o <- as.h2o(data_test)
+
+# Set the target variable
+y <- "is_popular"
+X <- setdiff(names(data_train_h2o), y)
+```
+
+I decided to use H2O to create an ensemble model from four base-learners, using `deeplearning` as the metalearner_algoritm:
+
+* GLM model with 5-fold cross-validation, and tuning the `alpha` regularization hyperparameter (`c(0, 0.25, 0.5, 0.75, 1)`)
+* Random forest with 5-fold CV, 500 trees and tuning two different `mtries`, 3 and 5.
+* GBM with 500 trees, `learn_rate = c(0.001, 0.01)`, `max_depth = c(5, 10)`, `sample_rate = c(0.7, 0.8)` and `col_sample_rate = c(0.7, 0.8)`.
+* Deep learning model with 5-fold CV, 10 epochs, misclassification as the stopping metric and 0.01 as the stopping tolerance with 2 stopping rounds. For the hyper-parameters, I experimented with the input dropout ratio, the learning rate and the hidden layers.
+
+```{r}
+# GLM
+glm_grid_h2o <- h2o.grid(
+  x = X, y = y, 
+  training_frame = data_train_h2o, 
+  family = "binomial",
+  algorithm = "glm", 
+  lambda_search = TRUE, 
+  nfolds = 5,
+  seed = 1234,
+  hyper_params = list(
+    alpha = c(0, 0.25, 0.5, 0.75, 1)
+  ), 
+  keep_cross_validation_predictions = TRUE
+)
+
+# Random Forest
+rf_grid_h2o <- h2o.grid(
+  x = X, y = y, 
+  training_frame = data_train_h2o, 
+  algorithm = "randomForest",
+  nfolds = 5,
+  seed = 1234,
+  hyper_params = list(
+    ntrees = 500,
+    mtries = c(3, 5)
+  ), 
+  keep_cross_validation_predictions = TRUE
+)
+
+# GBM
+gbm_grid_h2o <- h2o.grid(
+  x = X, y = y,
+  training_frame = data_train_h2o,
+  algorithm = "gbm",
+  ntrees = 500, 
+  seed = 1234,
+  nfolds = 5, 
+  hyper_params = list(
+    learn_rate = c(0.001, 0.01),
+    max_depth = c(5, 10),
+    sample_rate = c(0.7, 0.8),
+    col_sample_rate = c(0.7, 0.8)
+  ), 
+  keep_cross_validation_predictions = TRUE
+)
+
+# Deep Learning
+dl_grid_h2o <- h2o.grid(
+  x = X, y = y,
+  training_frame = data_train_h2o,
+  algorithm = "deeplearning",
+  seed = 1234,
+  nfolds = 5,
+  epochs = 10,
+  stopping_metric = "misclassification",
+  stopping_tolerance = 1e-2,
+  stopping_rounds = 2,
+  hyper_params = list(
+    input_dropout_ratio = c(0, 0.05),
+    rate = c(0.01, 0.02),
+    hidden = list(c(32, 16, 8), c(32, 32))
+  ), 
+  keep_cross_validation_predictions = TRUE
+)
+```
+
+After the grid search, I selected the models with the highest AUC from each base-learner to feed into the ensemble model.
+
+```{r}
+# GLM
+glm_model_h2o <- h2o.getModel(
+  h2o.getGrid(
+    glm_grid_h2o@grid_id, 
+    sort_by = "auc",
+    decreasing = TRUE
+  )@model_ids[[1]]
+)
+
+# Random Forest
+rf_model_h2o <- h2o.getModel(
+  h2o.getGrid(
+    rf_grid_h2o@grid_id,
+    sort_by = "auc",
+    decreasing = TRUE
+  )@model_ids[[1]]
+)
+
+# GBM
+gbm_model_h2o <- h2o.getModel(
+  h2o.getGrid(
+    gbm_grid_h2o@grid_id,
+    sort_by = "auc",
+    decreasing = TRUE
+  )@model_ids[[1]]
+)
+
+# Deep Learning
+dl_model_h2o <- h2o.getModel(
+  h2o.getGrid(
+    dl_grid_h2o@grid_id,
+    sort_by = "auc",
+    decreasing = TRUE
+  )@model_ids[[1]]
+)
+```
+
+```{r}
+# Train the ensemble model
+ensemble_model_dl <- h2o.stackedEnsemble(
+  X, y,
+  training_frame = data_train_h2o,
+  metalearner_algorithm = "deeplearning",
+  seed = 1234,
+  base_models = list(
+    rf_model_h2o,
+    glm_model_h2o, 
+    gbm_model_h2o,
+    dl_model_h2o
+  )
+)
+
+print(h2o.auc(h2o.performance(ensemble_model_dl, newdata = data_train_h2o)))
+```
+
+The ensemble model produced the highest AUC out of the models I tried, and it performed best according to the Kaggle submissions as well.
+
+```{r, include=FALSE}
+ensemble_model_dl_results <- h2o.cbind(
+  h2o.predict(
+    ensemble_model_dl, 
+    newdata = data_test_h2o, 
+    type = "prob", 
+    decision.values = TRUE),
+  data_test_h2o$article_id
+)[, c("article_id", "popular")]
+
+names(ensemble_model_dl_results)[2] = c("score")
+
+h2o.exportFile(ensemble_model_dl_results, "data/online_news_popularity/predictions/ensemble_model_dl_results.csv", sep = ",")
+```
+
+> The neural network prediction's AUC was __0.71133__ on Kaggle.
+
+I believe that with more computational power I would've been able to fine-tune the models and achieve better scores, but my computer couldn't handle the load while trying to tune the number of trees for the random forest between 500 and 1000, just to give one example. In an ideal world, I would've also liked to see how my ensemble model performs if I provide a netural net as a base-learner in addition to the ones I did. But I'm still happy with the score I was able to achieve.
