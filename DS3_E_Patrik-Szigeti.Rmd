@@ -1,7 +1,7 @@
 ---
 title: "Data Science 3: Take Home Exam"
 author: "Patrik Szigeti"
-date: '03/28/2020'
+date: '03/29/2020'
 output: html_document
 ---
 
@@ -32,7 +32,7 @@ raw_data_test <- fread("data/online_news_popularity/test.csv")
 skim(raw_data_train)
 ```
 
-* By skimming the `raw_data_train` dataset, I can see that there are a lot of dummy variables that should be converted to factors (e.g. `data_channel_is_lifestyle` or `weekday_is_monday`). It's also apparent that the `is_weekend` variable doesn't add anything to the data, since we already have `weekday_is_saturday` and `weekday_is_sunday` that determines whether it's the weekend or not. 
+* By skimming the `raw_data_train` dataset, I can see that there are a lot of dummy variables that should be converted to factors (e.g. `data_channel_is_lifestyle` or `weekday_is_monday`). It's also apparent that the `is_weekend` variable doesn't add anything to the data, since we already have `weekday_is_saturday` and `weekday_is_sunday` that determines whether it's the weekend or not, so it can be removed. 
 * There seems to be an extreme value in the `n_unique_tokens` variable, which is the rate of unique words in the content, and should be a value between 0 and 1.
 * My goal is to predict `is_popular` as a value between 0 and 1 to find out which articles will be shared the most.
 
@@ -148,7 +148,7 @@ write.csv(linear_results, "data/online_news_popularity/predictions/linear_result
 
 ### Random Forest Prediction
 
-For my baseline random forest, I'm experimenting with different number of variables randomly sampled at each split (`mtry = c(2, 3, 5, 8`) and different minimum node sizes (`min.node.size = c(5, 10)`).
+For my baseline random forest, I'm experimenting with different number of variables randomly sampled at each split (`mtry = c(2, 3, 5, 8)`) and different minimum node sizes (`min.node.size = c(5, 10)`).
 
 ```{r}
 tune_grid <- expand.grid(
@@ -325,7 +325,7 @@ write.csv(gbm_results, "data/online_news_popularity/predictions/gbm_results.csv"
 
 ### Neural Network Prediction
 
-For my neural network prediction, I specified two hyper-parameters:
+For my neural network prediction, I searched for two hyper-parameters in the grid:
 
 * The number of units in the hidden layer (`size = c(3, 5, 7, 10, 15)`)
 * And a regularization parameter to avoid over-fitting (`decay = c(0.1, 0.5, 1, 1.5, 2, 2.5, 5)`)
@@ -358,7 +358,7 @@ nnet_prediction <- prediction(
 performance(nnet_prediction, measure = "auc")@y.values[[1]]
 ```
 
-The AUC for the neural network prediction is 0.7142, which is an improvement compared to the previous models.
+The AUC for the neural network prediction is 0.7142, which is an improvement compared to GLM or RF, but not compared to GBM.
 
 ```{r, include=FALSE}
 # Save the neural net results
@@ -393,9 +393,9 @@ y <- "is_popular"
 X <- setdiff(names(data_train_h2o), y)
 ```
 
-I decided to use H2O to create an ensemble model from four base-learners, using `deeplearning` as the metalearner_algoritm:
+I decided to use H2O to create an ensemble model from four base-learners, using `deeplearning` as the `metalearner_algoritm`:
 
-* GLM model with 5-fold cross-validation, and tuning the `alpha` regularization hyperparameter (`c(0, 0.25, 0.5, 0.75, 1)`)
+* GLM model with 5-fold cross-validation, and tuning the `alpha` regularization hyperparameter (`c(0, 0.25, 0.5, 0.75, 1)`).
 * Random forest with 5-fold CV, 500 trees and tuning two different `mtries`, 3 and 5.
 * GBM with 500 trees, `learn_rate = c(0.001, 0.01)`, `max_depth = c(5, 10)`, `sample_rate = c(0.7, 0.8)` and `col_sample_rate = c(0.7, 0.8)`.
 * Deep learning model with 5-fold CV, 10 epochs, misclassification as the stopping metric and 0.01 as the stopping tolerance with 2 stopping rounds. For the hyper-parameters, I experimented with the input dropout ratio, the learning rate and the hidden layers.
@@ -507,8 +507,9 @@ dl_model_h2o <- h2o.getModel(
 )
 ```
 
+Training the ensemble model:
+
 ```{r}
-# Train the ensemble model
 ensemble_model_dl <- h2o.stackedEnsemble(
   X, y,
   training_frame = data_train_h2o,
@@ -539,9 +540,12 @@ ensemble_model_dl_results <- h2o.cbind(
 
 names(ensemble_model_dl_results)[2] = c("score")
 
-h2o.exportFile(ensemble_model_dl_results, "data/online_news_popularity/predictions/ensemble_model_dl_results.csv", sep = ",")
+h2o.exportFile(ensemble_model_dl_results, "data/online_news_popularity/predictions/ensemble_model_dl_results.csv", sep = ",", force=TRUE)
 ```
 
 > The neural network prediction's AUC was __0.71133__ on Kaggle.
 
-I believe that with more computational power I would've been able to fine-tune the models and achieve better scores, but my computer couldn't handle the load while trying to tune the number of trees for the random forest between 500 and 1000, just to give one example. In an ideal world, I would've also liked to see how my ensemble model performs if I provide a netural net as a base-learner in addition to the ones I did. But I'm still happy with the score I was able to achieve.
+# Conclusion
+
+* I believe that with more computational power, I would've been able to fine-tune the models and achieve better scores, but my computer couldn't handle the load while trying to tune the number of trees for the random forest between 500 and 1000, just to give one example. 
+* In an ideal world, I would've also liked to see how my ensemble model performs if I provide a netural net as a base-learner in addition to the ones I did, but I'm still happy with the score I was able to achieve.
