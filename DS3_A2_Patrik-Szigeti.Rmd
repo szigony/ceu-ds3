@@ -1,0 +1,156 @@
+---
+title: "Data Science 3: Homework Assignment 2"
+author: "Patrik Szigeti"
+date: '04/08/2020'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, include=FALSE, message=FALSE, warning=FALSE}
+# Load libraries
+library(keras)
+```
+
+# 1. Fashion MNIST data
+
+```{r, message = FALSE}
+fashion_mnist <- dataset_fashion_mnist()
+x_train <- fashion_mnist$train$x
+y_train <- fashion_mnist$train$y
+x_test <- fashion_mnist$test$x
+y_test <- fashion_mnist$test$y
+```
+
+### a. Show some example images from the data.
+
+```{r, fig.width=2, fig.height=2}
+show_mnist_image <- function(x) {
+  image(1:28, 1:28, t(x)[,nrow(x):1], col=gray((0:255)/255)) 
+}
+
+show_mnist_image(x_train[1, , ])
+show_mnist_image(x_train[50, , ])
+show_mnist_image(x_train[100, , ])
+```
+
+* The first picture in the train data seems to be a shoe.
+* The 50th looks like a dress.
+* The 100th is a bag.
+
+> Our goal is to have the best possible classifier based on accuracy for these fashion items.
+
+### b. Train a fully connected deep network to predict items.
+
+#### Normalize the data similarly to what we saw with MNIST.
+
+The images have 28x28 pixel dimensions, and there are 10 different classes in the dataset.
+
+```{r}
+# Reshape train/test inputs
+x_train <- array_reshape(x_train, c(dim(x_train)[1], 784)) 
+x_test <- array_reshape(x_test, c(dim(x_test)[1], 784)) 
+
+# Rescale RGB values into [0, 1]
+x_train <- x_train / 255
+x_test <- x_test / 255
+
+# One-hot encoding of the target variable
+y_train <- to_categorical(y_train, 10)
+y_test <- to_categorical(y_test, 10)
+```
+
+#### Experiment with network architectures and settings (number of hidden layers, number of nodes, activation functions, dropout, etc.)
+
+* As a baseline, I ran the exact same model that we used for digit classification in the class.
+
+```{r, warning = FALSE}
+set.seed(1234)
+model_1 <- keras_model_sequential() %>% 
+  layer_dense(units = 128, activation = 'relu', input_shape = c(784)) %>%
+  layer_dropout(rate = 0.3) %>%
+  layer_dense(units = 10, activation = 'softmax')
+
+model_1 %>% compile(
+  loss = 'categorical_crossentropy',
+  optimizer = optimizer_rmsprop(),
+  metrics = c('accuracy')
+)
+  
+model_1 %>% fit(
+  x_train, y_train, 
+  epochs = 30, 
+  batch_size = 128, 
+  validation_split = 0.2,
+  verbose = FALSE
+)
+
+model_1 %>% evaluate(
+  x_test, y_test
+)
+```
+
+The baseline model gives us an accuracy of __0.8863__, which is pretty good considering no modifications were made.
+
+* For my second model, I'm keeping everything intact except for the dropout ratio, which I'll increase to 0.5.
+
+```{r, warning = FALSE}
+set.seed(1234)
+model_2 <- keras_model_sequential() %>% 
+  layer_dense(units = 128, activation = 'relu', input_shape = c(784)) %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_dense(units = 10, activation = 'softmax')
+
+model_2 %>% compile(
+  loss = 'categorical_crossentropy',
+  optimizer = optimizer_rmsprop(),
+  metrics = c('accuracy')
+)
+  
+model_2 %>% fit(
+  x_train, y_train, 
+  epochs = 30, 
+  batch_size = 128, 
+  validation_split = 0.2,
+  verbose = FALSE
+)
+
+model_2 %>% evaluate(
+  x_test, y_test
+)
+```
+
+This ended up dropping the accuracy to __0.8786__, so I'm reverting back to `layer_dropout(rate = 0.3)`.
+
+* I'll try adding a third dense layer inbetween the current ones.
+
+```{r, warning = FALSE}
+set.seed(1234)
+model_3 <- keras_model_sequential() %>% 
+  layer_dense(units = 128, activation = 'relu', input_shape = c(784)) %>%
+  layer_dropout(rate = 0.3) %>%
+  layer_dense(units = 64, activation = 'relu', input_shape = c(784)) %>% 
+  layer_dropout(rate = 0.3) %>% 
+  layer_dense(units = 10, activation = 'softmax')
+
+model_3 %>% compile(
+  loss = 'categorical_crossentropy',
+  optimizer = optimizer_rmsprop(),
+  metrics = c('accuracy')
+)
+  
+model_3 %>% fit(
+  x_train, y_train, 
+  epochs = 30, 
+  batch_size = 128, 
+  validation_split = 0.2,
+  verbose = FALSE
+)
+
+model_3 %>% evaluate(
+  x_test, y_test
+)
+```
+
