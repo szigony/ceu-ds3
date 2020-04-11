@@ -12,6 +12,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r, include=FALSE, message=FALSE, warning=FALSE}
 # Load libraries
 library(keras)
+library(tidyverse)
 ```
 
 # 1. Fashion MNIST data
@@ -44,8 +45,6 @@ show_mnist_image(x_train[100, , ])
 
 ### b. Train a fully connected deep network to predict items.
 
-#### Normalize the data similarly to what we saw with MNIST.
-
 The images have 28x28 pixel dimensions, and there are 10 different classes in the dataset.
 
 ```{r}
@@ -62,12 +61,9 @@ y_train <- to_categorical(y_train, 10)
 y_test <- to_categorical(y_test, 10)
 ```
 
-#### Experiment with network architectures and settings (number of hidden layers, number of nodes, activation functions, dropout, etc.)
-
 * As a baseline, I ran the exact same model that we used for digit classification in the class.
 
 ```{r, warning = FALSE}
-set.seed(1234)
 model_1 <- keras_model_sequential() %>% 
   layer_dense(units = 128, activation = 'relu', input_shape = c(784)) %>%
   layer_dropout(rate = 0.3) %>%
@@ -78,26 +74,27 @@ model_1 %>% compile(
   optimizer = optimizer_rmsprop(),
   metrics = c('accuracy')
 )
-  
-model_1 %>% fit(
-  x_train, y_train, 
-  epochs = 30, 
-  batch_size = 128, 
-  validation_split = 0.2,
-  verbose = FALSE
-)
 
-model_1 %>% evaluate(
-  x_test, y_test
-)
+set.seed(1234)  
+history_1 <- model_1 %>% 
+  fit(
+    x_train, y_train, 
+    epochs = 30, 
+    batch_size = 128, 
+    validation_split = 0.2,
+    verbose = FALSE
+  )
+
+score_1 <- model_1 %>% 
+  evaluate(
+    x_test, y_test,
+    verbose = 0
+  )
 ```
-
-The baseline model gives us an accuracy of __0.8863__, which is pretty good considering no modifications were made.
 
 * For my second model, I'm keeping everything intact except for the dropout ratio, which I'll increase to 0.5.
 
 ```{r, warning = FALSE}
-set.seed(1234)
 model_2 <- keras_model_sequential() %>% 
   layer_dense(units = 128, activation = 'relu', input_shape = c(784)) %>%
   layer_dropout(rate = 0.5) %>%
@@ -108,26 +105,27 @@ model_2 %>% compile(
   optimizer = optimizer_rmsprop(),
   metrics = c('accuracy')
 )
-  
-model_2 %>% fit(
-  x_train, y_train, 
-  epochs = 30, 
-  batch_size = 128, 
-  validation_split = 0.2,
-  verbose = FALSE
-)
 
-model_2 %>% evaluate(
-  x_test, y_test
-)
+set.seed(1234)  
+history_2 <- model_2 %>% 
+  fit(
+    x_train, y_train, 
+    epochs = 30, 
+    batch_size = 128, 
+    validation_split = 0.2,
+    verbose = FALSE
+  )
+
+score_2 <- model_2 %>% 
+  evaluate(
+    x_test, y_test,
+    verbose = 0
+  )
 ```
 
-This ended up dropping the accuracy to __0.8786__, so I'm reverting back to `layer_dropout(rate = 0.3)`.
-
-* I'll try adding a third dense layer inbetween the current ones.
+* Since the accuracy didn't increase, I'm reverting back to my original dropout ratio, and I'll try adding a third dense layer inbetween the current ones.
 
 ```{r, warning = FALSE}
-set.seed(1234)
 model_3 <- keras_model_sequential() %>% 
   layer_dense(units = 128, activation = 'relu', input_shape = c(784)) %>%
   layer_dropout(rate = 0.3) %>%
@@ -141,16 +139,114 @@ model_3 %>% compile(
   metrics = c('accuracy')
 )
   
-model_3 %>% fit(
-  x_train, y_train, 
-  epochs = 30, 
-  batch_size = 128, 
-  validation_split = 0.2,
-  verbose = FALSE
+set.seed(1234)
+history_3 <- model_3 %>% 
+  fit(
+    x_train, y_train, 
+    epochs = 30, 
+    batch_size = 128, 
+    validation_split = 0.2,
+    verbose = FALSE
+  )
+
+score_3 <- model_3 %>% 
+  evaluate(
+    x_test, y_test,
+    verbose = 0
+  )
+```
+
+* For my fourth model, I'm experimenting with `tanh` activation instead of `relu` and decreasing the dropout rate to 0.2.
+
+```{r, warning = FALSE}
+model_4 <- keras_model_sequential() %>% 
+  layer_dense(units = 128, activation = 'tanh', input_shape = c(784)) %>%
+  layer_dropout(rate = 0.2) %>%
+  layer_dense(units = 10, activation = 'softmax')
+
+model_4 %>% compile(
+  loss = 'categorical_crossentropy',
+  optimizer = optimizer_rmsprop(),
+  metrics = c('accuracy')
 )
 
-model_3 %>% evaluate(
-  x_test, y_test
+set.seed(1234)  
+history_4 <- model_4 %>% 
+  fit(
+    x_train, y_train, 
+    epochs = 30, 
+    batch_size = 128, 
+    validation_split = 0.2,
+    verbose = FALSE
+  )
+
+score_4 <- model_4 %>% 
+  evaluate(
+    x_test, y_test,
+    verbose = 0
+  )
+```
+
+* For my fifth and final model, I'm using `adam` as the optimizer instead of `rmsprop` while keeping `tanh` as the activation function and increasing the dropout ratio to 0.3.
+
+```{r, warning = FALSE}
+model_5 <- keras_model_sequential() %>% 
+  layer_dense(units = 128, activation = 'tanh', input_shape = c(784)) %>%
+  layer_dropout(rate = 0.3) %>%
+  layer_dense(units = 10, activation = 'softmax')
+
+model_5 %>% compile(
+  loss = 'categorical_crossentropy',
+  optimizer = 'adam',
+  metrics = c('accuracy')
+)
+
+set.seed(1234)  
+history_5 <- model_5 %>% 
+  fit(
+    x_train, y_train, 
+    epochs = 30, 
+    batch_size = 128, 
+    validation_split = 0.2,
+    verbose = FALSE
+  )
+
+score_5 <- model_5 %>% 
+  evaluate(
+    x_test, y_test,
+    verbose = 0
+  )
+```
+
+* Evaluate the model
+
+```{r}
+as_tibble(
+  list(
+    "model_1" = score_1$accuracy,
+    "model_2" = score_2$accuracy,
+    "model_3" = score_3$accuracy,
+    "model_4" = score_4$accuracy,
+    "model_5" = score_5$accuracy
+  )
 )
 ```
+
+Based on the accuracy of the predictions on the test set, it seems like I wasn't able to improve upon my baseline model. Increasing the dropout ratio lowered the accuracy by quite a bit, and while a third layer produced an improvement compared to that, it still performed worse than the baseline model. The closest I got to my base model was using `tanh` activation instead of `relu`, but that still fell short. Switching optimizers from `rmsprop` to `adam` didn't increase the accuracy either, and actually ended up producing the lowest accuracy.
+
+__As my final modeling, I've decided to go with my first one, as that produced the highest accuracy.__
+
+```{r}
+final_model <- model_1
+final_history <- history_1
+```
+
+* Plot the training history for my final model.
+
+```{r fig.align="center"}
+plot(final_history)
+```
+
+* From the accuracy plot, we can see that I probably could've trained the model a little more as the trend for accuracy on both datasets is still rising for the last few epochs, although the validation accuracy seems to even out and only slowly increase after somewhere between the 15th and 20th epochs.
+* From the loss plot, we can see that it might worth to stop training at an earlier epoch, as the parallel plots for training and validation start to depart consistently somewhere between the 10th and 15th epoch.
 
