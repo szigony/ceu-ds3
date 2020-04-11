@@ -90,6 +90,8 @@ score_1 <- model_1 %>%
     x_test, y_test,
     verbose = 0
   )
+
+print(paste('Accuracy of model_1:', round(score_1$accuracy, 4)))
 ```
 
 * For my second model, I'm keeping everything intact except for the dropout ratio, which I'll increase to 0.5.
@@ -121,6 +123,8 @@ score_2 <- model_2 %>%
     x_test, y_test,
     verbose = 0
   )
+
+print(paste('Accuracy of model_2:', round(score_2$accuracy, 4)))
 ```
 
 * Since the accuracy didn't increase, I'm reverting back to my original dropout ratio, and I'll try adding a third dense layer inbetween the current ones.
@@ -154,6 +158,8 @@ score_3 <- model_3 %>%
     x_test, y_test,
     verbose = 0
   )
+
+print(paste('Accuracy of model_3:', round(score_3$accuracy, 4)))
 ```
 
 * For my fourth model, I'm experimenting with `tanh` activation instead of `relu` and decreasing the dropout rate to 0.2.
@@ -185,6 +191,8 @@ score_4 <- model_4 %>%
     x_test, y_test,
     verbose = 0
   )
+
+print(paste('Accuracy of model_4:', round(score_4$accuracy, 4)))
 ```
 
 * For my fifth and final model, I'm using `adam` as the optimizer instead of `rmsprop` while keeping `tanh` as the activation function and increasing the dropout ratio to 0.3.
@@ -216,9 +224,11 @@ score_5 <- model_5 %>%
     x_test, y_test,
     verbose = 0
   )
+
+print(paste('Accuracy of model_5:', round(score_5$accuracy, 4)))
 ```
 
-* Evaluate the model
+* Evaluate the models
 
 ```{r}
 as_tibble(
@@ -232,7 +242,7 @@ as_tibble(
 )
 ```
 
-Based on the accuracy of the predictions on the test set, it seems like I wasn't able to improve upon my baseline model. Increasing the dropout ratio lowered the accuracy by quite a bit, and while a third layer produced an improvement compared to that, it still performed worse than the baseline model. The closest I got to my base model was using `tanh` activation instead of `relu`, but that still fell short. Switching optimizers from `rmsprop` to `adam` didn't increase the accuracy either, and actually ended up producing the lowest accuracy.
+Based on the accuracy of the predictions on the test set, it seems like I wasn't able to improve upon my baseline model (`model_1`). Increasing the dropout ratio lowered the accuracy by quite a bit (`model_2`), and while a third layer produced an improvement compared to that (`model_3`), it still performed worse than the baseline model. The closest I got to my base model was using `tanh` activation instead of `relu`, but that still fell short (`model_4`). Switching optimizers from `rmsprop` to `adam` didn't increase the accuracy either, and actually ended up producing the lowest accuracy (`model_5`).
 
 __As my final modeling, I've decided to go with my first one, as that produced the highest accuracy.__
 
@@ -241,7 +251,7 @@ final_model <- model_1
 final_history <- history_1
 ```
 
-* Plot the training history for my final model.
+### c. Evaluate the model on the test set. How does test error compare to validation error?
 
 ```{r fig.align="center"}
 plot(final_history)
@@ -249,4 +259,171 @@ plot(final_history)
 
 * From the accuracy plot, we can see that I probably could've trained the model a little more as the trend for accuracy on both datasets is still rising for the last few epochs, although the validation accuracy seems to even out and only slowly increase after somewhere between the 15th and 20th epochs.
 * From the loss plot, we can see that it might worth to stop training at an earlier epoch, as the parallel plots for training and validation start to depart consistently somewhere between the 10th and 15th epoch.
+
+### d. Try building a convolutional neural network and see if you can improve test set performance.
+
+```{r}
+# Load Fashion MNIST data
+x_train_cnn <- fashion_mnist$train$x
+y_train_cnn <- fashion_mnist$train$y
+x_test_cnn <- fashion_mnist$test$x
+y_test_cnn <- fashion_mnist$test$y
+
+# Reshape train/test inputs
+x_train_cnn <- array_reshape(x_train_cnn, c(nrow(x_train_cnn), 28, 28, 1))
+x_test_cnn <- array_reshape(x_test_cnn, c(nrow(x_test_cnn), 28, 28, 1))
+
+# Rescale RGB values into [0, 1]
+x_train_cnn <- x_train_cnn / 255
+x_test_cnn <- x_test_cnn / 255
+
+# One-hot encoding of the target variable
+y_train_cnn <- to_categorical(y_train_cnn, 10)
+y_test_cnn <- to_categorical(y_test_cnn, 10)
+```
+
+* Learning from the previous example, I'm once again using the same model we did in class for digit classification as my baseline model. Although I'm decreasing the number of epochs to 15 for two reasons: that seemed to be the cutoff point in case of the fully connected deep network, and to limit the computational power needed to run the models.
+
+```{r}
+cnn_model_1 <- keras_model_sequential() %>% 
+  layer_conv_2d(
+    filters = 32,
+    kernel_size = c(3, 3), 
+    activation = 'relu',
+    input_shape = c(28, 28, 1)
+  ) %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>% 
+  layer_dropout(rate = 0.25) %>%
+  layer_flatten() %>% 
+  layer_dense(units = 32, activation = 'relu') %>% 
+  layer_dense(units = 10, activation = 'softmax')
+
+cnn_model_1 %>% compile(
+  loss = 'categorical_crossentropy',
+  optimizer = optimizer_rmsprop(),
+  metrics = c('accuracy')
+)
+
+cnn_history_1 <- cnn_model_1 %>% 
+  fit(
+    x_train_cnn, y_train_cnn, 
+    epochs = 15, 
+    batch_size = 128, 
+    validation_split = 0.2,
+    verbose = FALSE
+  )
+
+cnn_score_1 <- cnn_model_1 %>% 
+  evaluate(
+    x_test_cnn, y_test_cnn,
+    verbose = 0
+  )
+
+print(paste('Accuracy of cnn_model_1:', round(cnn_score_1$accuracy, 4)))
+```
+
+* For my second model, I'm including an extra convulational layer before `max_pooling_2d` and increasing the number of units in the penultimate dense layer to 128, which was the batch size for the fully connected neural network above.
+
+```{r}
+cnn_model_2 <- keras_model_sequential() %>% 
+  layer_conv_2d(
+    filters = 32,
+    kernel_size = c(3, 3), 
+    activation = 'relu',
+    input_shape = c(28, 28, 1)
+  ) %>%
+  layer_conv_2d(
+    filters = 64,
+    kernel_size = c(3, 3),
+    activation = 'relu'
+  ) %>% 
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>% 
+  layer_dropout(rate = 0.25) %>%
+  layer_flatten() %>% 
+  layer_dense(units = 128, activation = 'relu') %>% 
+  layer_dense(units = 10, activation = 'softmax')
+
+cnn_model_2 %>% compile(
+  loss = 'categorical_crossentropy',
+  optimizer = optimizer_rmsprop(),
+  metrics = c('accuracy')
+)
+
+cnn_history_2 <- cnn_model_2 %>% 
+  fit(
+    x_train_cnn, y_train_cnn, 
+    epochs = 15, 
+    batch_size = 128, 
+    validation_split = 0.2,
+    verbose = FALSE
+  )
+
+cnn_score_2 <- cnn_model_2 %>% 
+  evaluate(
+    x_test_cnn, y_test_cnn,
+    verbose = 0
+  )
+
+print(paste('Accuracy of cnn_model_2:', round(cnn_score_2$accuracy, 4)))
+```
+
+* For my third and final model, as my previous model is already above 90% in accuracy, I'm just slightly refining it by adding a dropout layer with `rate = 0.5` inbetween the two dense layers. I'm also trying `adadelta` as the optimizer, which has parameter-specific learning rates that are adapted relative to how frequently a parameter gets updated during training (idea based on [Roan Gylberth's article](https://medium.com/konvergen/continuing-on-adaptive-method-adadelta-and-rmsprop-1ff2c6029133)).
+
+```{r}
+cnn_model_3 <- keras_model_sequential() %>% 
+  layer_conv_2d(
+    filters = 32,
+    kernel_size = c(3, 3), 
+    activation = 'relu',
+    input_shape = c(28, 28, 1)
+  ) %>%
+  layer_conv_2d(
+    filters = 64,
+    kernel_size = c(3, 3),
+    activation = 'relu'
+  ) %>% 
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>% 
+  layer_dropout(rate = 0.25) %>%
+  layer_flatten() %>% 
+  layer_dense(units = 128, activation = 'relu') %>% 
+  layer_dropout(rate = 0.5) %>% 
+  layer_dense(units = 10, activation = 'softmax')
+
+cnn_model_3 %>% compile(
+  loss = 'categorical_crossentropy',
+  optimizer = optimizer_adadelta(),
+  metrics = c('accuracy')
+)
+
+cnn_history_3 <- cnn_model_3 %>% 
+  fit(
+    x_train_cnn, y_train_cnn, 
+    epochs = 15, 
+    batch_size = 128, 
+    validation_split = 0.2,
+    verbose = FALSE
+  )
+
+cnn_score_3 <- cnn_model_3 %>% 
+  evaluate(
+    x_test_cnn, y_test_cnn,
+    verbose = 0
+  )
+
+print(paste('Accuracy of cnn_model_3:', round(cnn_score_3$accuracy, 4)))
+```
+
+* Compare test accuracy for the three convolutional neural network models
+
+```{r}
+as_tibble(
+  list(
+    "cnn_model_1" = cnn_score_1$accuracy,
+    "cnn_model_2" = cnn_score_2$accuracy,
+    "cnn_model_3" = cnn_score_3$accuracy
+  )
+)
+```
+
+__All three convolutional models improved test performance__ compared to the fully connected ones, and it seems like adding an extra convolutional layer really helped increase performance, there's an apparent step between `cnn_model_1` and `cnn_model_2`. Including an additional dropout layer (`cnn_model_3`) however, didn't add any value.
 
