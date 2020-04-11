@@ -1,7 +1,7 @@
 ---
 title: "Data Science 3: Homework Assignment 2"
 author: "Patrik Szigeti"
-date: '04/08/2020'
+date: '04/11/2020'
 output: html_document
 ---
 
@@ -13,6 +13,9 @@ knitr::opts_chunk$set(echo = TRUE)
 # Load libraries
 library(keras)
 library(tidyverse)
+library(here)
+library(grid)
+library(magick)
 ```
 
 # 1. Fashion MNIST data
@@ -65,14 +68,14 @@ y_test <- to_categorical(y_test, 10)
 
 ```{r, warning = FALSE}
 model_1 <- keras_model_sequential() %>% 
-  layer_dense(units = 128, activation = 'relu', input_shape = c(784)) %>%
+  layer_dense(units = 128, activation = "relu", input_shape = c(784)) %>%
   layer_dropout(rate = 0.3) %>%
-  layer_dense(units = 10, activation = 'softmax')
+  layer_dense(units = 10, activation = "softmax")
 
 model_1 %>% compile(
-  loss = 'categorical_crossentropy',
+  loss = "categorical_crossentropy",
   optimizer = optimizer_rmsprop(),
-  metrics = c('accuracy')
+  metrics = c("accuracy")
 )
 
 set.seed(1234)  
@@ -91,21 +94,21 @@ score_1 <- model_1 %>%
     verbose = 0
   )
 
-print(paste('Accuracy of model_1:', round(score_1$accuracy, 4)))
+print(paste("Accuracy of model_1:", round(score_1$accuracy, 4)))
 ```
 
-* For my second model, I'm keeping everything intact except for the dropout ratio, which I'll increase to 0.5.
+* For my second model, as the accuracy of the baseline model is pretty promising, I'm keeping everything intact except for the dropout ratio, which I'll increase to 0.5.
 
 ```{r, warning = FALSE}
 model_2 <- keras_model_sequential() %>% 
-  layer_dense(units = 128, activation = 'relu', input_shape = c(784)) %>%
+  layer_dense(units = 128, activation = "relu", input_shape = c(784)) %>%
   layer_dropout(rate = 0.5) %>%
-  layer_dense(units = 10, activation = 'softmax')
+  layer_dense(units = 10, activation = "softmax")
 
 model_2 %>% compile(
-  loss = 'categorical_crossentropy',
+  loss = "categorical_crossentropy",
   optimizer = optimizer_rmsprop(),
-  metrics = c('accuracy')
+  metrics = c("accuracy")
 )
 
 set.seed(1234)  
@@ -124,23 +127,23 @@ score_2 <- model_2 %>%
     verbose = 0
   )
 
-print(paste('Accuracy of model_2:', round(score_2$accuracy, 4)))
+print(paste("Accuracy of model_2:", round(score_2$accuracy, 4)))
 ```
 
-* Since the accuracy didn't increase, I'm reverting back to my original dropout ratio, and I'll try adding a third dense layer inbetween the current ones.
+* Given that the accuracy didn't increase, I'm reverting back to my original dropout ratio, and I'll try adding a third dense layer between the current ones.
 
 ```{r, warning = FALSE}
 model_3 <- keras_model_sequential() %>% 
-  layer_dense(units = 128, activation = 'relu', input_shape = c(784)) %>%
+  layer_dense(units = 128, activation = "relu", input_shape = c(784)) %>%
   layer_dropout(rate = 0.3) %>%
-  layer_dense(units = 64, activation = 'relu', input_shape = c(784)) %>% 
+  layer_dense(units = 64, activation = "relu", input_shape = c(784)) %>% 
   layer_dropout(rate = 0.3) %>% 
-  layer_dense(units = 10, activation = 'softmax')
+  layer_dense(units = 10, activation = "softmax")
 
 model_3 %>% compile(
-  loss = 'categorical_crossentropy',
+  loss = "categorical_crossentropy",
   optimizer = optimizer_rmsprop(),
-  metrics = c('accuracy')
+  metrics = c("accuracy")
 )
   
 set.seed(1234)
@@ -159,21 +162,21 @@ score_3 <- model_3 %>%
     verbose = 0
   )
 
-print(paste('Accuracy of model_3:', round(score_3$accuracy, 4)))
+print(paste("Accuracy of model_3:", round(score_3$accuracy, 4)))
 ```
 
 * For my fourth model, I'm experimenting with `tanh` activation instead of `relu` and decreasing the dropout rate to 0.2.
 
 ```{r, warning = FALSE}
 model_4 <- keras_model_sequential() %>% 
-  layer_dense(units = 128, activation = 'tanh', input_shape = c(784)) %>%
+  layer_dense(units = 128, activation = "tanh", input_shape = c(784)) %>%
   layer_dropout(rate = 0.2) %>%
-  layer_dense(units = 10, activation = 'softmax')
+  layer_dense(units = 10, activation = "softmax")
 
 model_4 %>% compile(
-  loss = 'categorical_crossentropy',
+  loss = "categorical_crossentropy",
   optimizer = optimizer_rmsprop(),
-  metrics = c('accuracy')
+  metrics = c("accuracy")
 )
 
 set.seed(1234)  
@@ -192,21 +195,21 @@ score_4 <- model_4 %>%
     verbose = 0
   )
 
-print(paste('Accuracy of model_4:', round(score_4$accuracy, 4)))
+print(paste("Accuracy of model_4:", round(score_4$accuracy, 4)))
 ```
 
-* For my fifth and final model, I'm using `adam` as the optimizer instead of `rmsprop` while keeping `tanh` as the activation function and increasing the dropout ratio to 0.3.
+* For my fifth and final model, I'm using `adam` as the optimizer instead of `rmsprop` (based on Sebastian Ruder's [article](https://ruder.io/optimizing-gradient-descent/index.html) about gradient descent optimization algorithms) while keeping `tanh` as the activation function and increasing the dropout ratio to 0.3.
 
 ```{r, warning = FALSE}
 model_5 <- keras_model_sequential() %>% 
-  layer_dense(units = 128, activation = 'tanh', input_shape = c(784)) %>%
+  layer_dense(units = 128, activation = "tanh", input_shape = c(784)) %>%
   layer_dropout(rate = 0.3) %>%
-  layer_dense(units = 10, activation = 'softmax')
+  layer_dense(units = 10, activation = "softmax")
 
 model_5 %>% compile(
-  loss = 'categorical_crossentropy',
-  optimizer = 'adam',
-  metrics = c('accuracy')
+  loss = "categorical_crossentropy",
+  optimizer = "adam",
+  metrics = c("accuracy")
 )
 
 set.seed(1234)  
@@ -225,7 +228,7 @@ score_5 <- model_5 %>%
     verbose = 0
   )
 
-print(paste('Accuracy of model_5:', round(score_5$accuracy, 4)))
+print(paste("Accuracy of model_5:", round(score_5$accuracy, 4)))
 ```
 
 * Evaluate the models
@@ -242,7 +245,7 @@ as_tibble(
 )
 ```
 
-Based on the accuracy of the predictions on the test set, it seems like I wasn't able to improve upon my baseline model (`model_1`). Increasing the dropout ratio lowered the accuracy by quite a bit (`model_2`), and while a third layer produced an improvement compared to that (`model_3`), it still performed worse than the baseline model. The closest I got to my base model was using `tanh` activation instead of `relu`, but that still fell short (`model_4`). Switching optimizers from `rmsprop` to `adam` didn't increase the accuracy either, and actually ended up producing the lowest accuracy (`model_5`).
+Based on the accuracy of the predictions on the test set, it seems like I wasn't able to improve upon my baseline model (`model_1`). Increasing the dropout ratio lowered the accuracy by quite a bit (`model_2`), and while adding a third layer (`model_3`) produced an improvement compared to the latter, it still performed worse than the baseline model. The closest I got to my base model was using `tanh` activation instead of `relu`, but that still fell short (`model_4`). Switching optimizers from `rmsprop` to `adam` didn't increase the accuracy either, it actually ended up producing one of the lowest accuracies (`model_5`).
 
 __As my final modeling, I've decided to go with my first one, as that produced the highest accuracy.__
 
@@ -282,28 +285,31 @@ y_train_cnn <- to_categorical(y_train_cnn, 10)
 y_test_cnn <- to_categorical(y_test_cnn, 10)
 ```
 
-* Learning from the previous example, I'm once again using the same model we did in class for digit classification as my baseline model. Although I'm decreasing the number of epochs to 15 for two reasons: that seemed to be the cutoff point in case of the fully connected deep network, and to limit the computational power needed to run the models.
+* Learning from the previous example, I'm once again using the same model we did in class for digit classification as my baseline model. Although I'm decreasing the number of epochs to 15 for two reasons:
+  * That seemed to be the cutoff point in case of the fully connected deep network
+  * And to limit the computational power needed to run the models.
 
 ```{r}
 cnn_model_1 <- keras_model_sequential() %>% 
   layer_conv_2d(
     filters = 32,
     kernel_size = c(3, 3), 
-    activation = 'relu',
+    activation = "relu",
     input_shape = c(28, 28, 1)
   ) %>%
   layer_max_pooling_2d(pool_size = c(2, 2)) %>% 
   layer_dropout(rate = 0.25) %>%
   layer_flatten() %>% 
-  layer_dense(units = 32, activation = 'relu') %>% 
-  layer_dense(units = 10, activation = 'softmax')
+  layer_dense(units = 32, activation = "relu") %>% 
+  layer_dense(units = 10, activation = "softmax")
 
 cnn_model_1 %>% compile(
-  loss = 'categorical_crossentropy',
+  loss = "categorical_crossentropy",
   optimizer = optimizer_rmsprop(),
-  metrics = c('accuracy')
+  metrics = c("accuracy")
 )
 
+set.seed(1234)
 cnn_history_1 <- cnn_model_1 %>% 
   fit(
     x_train_cnn, y_train_cnn, 
@@ -319,7 +325,7 @@ cnn_score_1 <- cnn_model_1 %>%
     verbose = 0
   )
 
-print(paste('Accuracy of cnn_model_1:', round(cnn_score_1$accuracy, 4)))
+print(paste("Accuracy of cnn_model_1:", round(cnn_score_1$accuracy, 4)))
 ```
 
 * For my second model, I'm including an extra convulational layer before `max_pooling_2d` and increasing the number of units in the penultimate dense layer to 128, which was the batch size for the fully connected neural network above.
@@ -329,26 +335,27 @@ cnn_model_2 <- keras_model_sequential() %>%
   layer_conv_2d(
     filters = 32,
     kernel_size = c(3, 3), 
-    activation = 'relu',
+    activation = "relu",
     input_shape = c(28, 28, 1)
   ) %>%
   layer_conv_2d(
     filters = 64,
     kernel_size = c(3, 3),
-    activation = 'relu'
+    activation = "relu"
   ) %>% 
   layer_max_pooling_2d(pool_size = c(2, 2)) %>% 
   layer_dropout(rate = 0.25) %>%
   layer_flatten() %>% 
-  layer_dense(units = 128, activation = 'relu') %>% 
-  layer_dense(units = 10, activation = 'softmax')
+  layer_dense(units = 128, activation = "relu") %>% 
+  layer_dense(units = 10, activation = "softmax")
 
 cnn_model_2 %>% compile(
-  loss = 'categorical_crossentropy',
+  loss = "categorical_crossentropy",
   optimizer = optimizer_rmsprop(),
-  metrics = c('accuracy')
+  metrics = c("accuracy")
 )
 
+set.seed(1234)
 cnn_history_2 <- cnn_model_2 %>% 
   fit(
     x_train_cnn, y_train_cnn, 
@@ -364,37 +371,38 @@ cnn_score_2 <- cnn_model_2 %>%
     verbose = 0
   )
 
-print(paste('Accuracy of cnn_model_2:', round(cnn_score_2$accuracy, 4)))
+print(paste("Accuracy of cnn_model_2:", round(cnn_score_2$accuracy, 4)))
 ```
 
-* For my third and final model, as my previous model is already above 90% in accuracy, I'm just slightly refining it by adding a dropout layer with `rate = 0.5` inbetween the two dense layers. I'm also trying `adadelta` as the optimizer, which has parameter-specific learning rates that are adapted relative to how frequently a parameter gets updated during training (idea based on [Roan Gylberth's article](https://medium.com/konvergen/continuing-on-adaptive-method-adadelta-and-rmsprop-1ff2c6029133)).
+* For my third and final model, as my previous models are already above 90% in accuracy, I'm just slightly refining them by adding a dropout layer with `rate = 0.5` between the two dense layers. I'm also trying `adadelta` as the optimizer, which has parameter-specific learning rates that are adapted relative to how frequently a parameter gets updated during training (idea based on Roan Gylberth's [article](https://medium.com/konvergen/continuing-on-adaptive-method-adadelta-and-rmsprop-1ff2c6029133)).
 
 ```{r}
 cnn_model_3 <- keras_model_sequential() %>% 
   layer_conv_2d(
     filters = 32,
     kernel_size = c(3, 3), 
-    activation = 'relu',
+    activation = "relu",
     input_shape = c(28, 28, 1)
   ) %>%
   layer_conv_2d(
     filters = 64,
     kernel_size = c(3, 3),
-    activation = 'relu'
+    activation = "relu"
   ) %>% 
   layer_max_pooling_2d(pool_size = c(2, 2)) %>% 
   layer_dropout(rate = 0.25) %>%
   layer_flatten() %>% 
-  layer_dense(units = 128, activation = 'relu') %>% 
+  layer_dense(units = 128, activation = "relu") %>% 
   layer_dropout(rate = 0.5) %>% 
-  layer_dense(units = 10, activation = 'softmax')
+  layer_dense(units = 10, activation = "softmax")
 
 cnn_model_3 %>% compile(
-  loss = 'categorical_crossentropy',
+  loss = "categorical_crossentropy",
   optimizer = optimizer_adadelta(),
-  metrics = c('accuracy')
+  metrics = c("accuracy")
 )
 
+set.seed(1234)
 cnn_history_3 <- cnn_model_3 %>% 
   fit(
     x_train_cnn, y_train_cnn, 
@@ -410,7 +418,7 @@ cnn_score_3 <- cnn_model_3 %>%
     verbose = 0
   )
 
-print(paste('Accuracy of cnn_model_3:', round(cnn_score_3$accuracy, 4)))
+print(paste("Accuracy of cnn_model_3:", round(cnn_score_3$accuracy, 4)))
 ```
 
 * Compare test accuracy for the three convolutional neural network models
@@ -425,5 +433,190 @@ as_tibble(
 )
 ```
 
-__All three convolutional models improved test performance__ compared to the fully connected ones, and it seems like adding an extra convolutional layer really helped increase performance, there's an apparent step between `cnn_model_1` and `cnn_model_2`. Including an additional dropout layer (`cnn_model_3`) however, didn't add any value.
+__All three convolutional models improved test performance__ compared to the fully connected models, and it seems like adding an extra convolutional layer really helped increase performance, there's an apparent step between `cnn_model_1` and `cnn_model_2`. Including an additional dropout layer (`cnn_model_3`) didn't add too much value.
 
+# 2. Hor dog or not hot dog?
+
+### a. Pre-process data so that it is acceptable by Keras (set folder structure, bring images to the same size, etc).
+
+* Looking at one example with the folder structure set up correctly to train/test and hot_dog/not_hot_dog:
+
+```{r}
+example_image_path <- file.path(here(), "/data/hot-dog-not-hot-dog/train/hot_dog/124323.jpg")
+
+image_read(example_image_path)
+```
+
+* Pre-processing the data
+
+```{r}
+# Normalize the inputs by rescaling
+train_datagen <- image_data_generator(rescale = 1/255)
+test_datagen <- image_data_generator(rescale = 1/255)  
+
+image_size <- c(300, 300) # Resize all images to 300x300 pixels
+batch_size <- 32
+
+train_generator <- flow_images_from_directory(
+  file.path(here(), "data/hot-dog-not-hot-dog/train/"),
+  train_datagen,
+  target_size = image_size,
+  batch_size = batch_size,
+  class_mode = "binary"
+)
+
+test_generator <- flow_images_from_directory(
+  file.path(here(), "data/hot-dog-not-hot-dog/test/"),
+  test_datagen,
+  target_size = image_size,
+  batch_size = batch_size,
+  class_mode = "binary"
+)
+```
+
+### b. Estimate a convolutional neural network to predict if an image contains a hot dog or not. Evaluate your model on the test set.
+
+```{r}
+hot_dog_model <- keras_model_sequential() %>% 
+  layer_conv_2d(
+    filters = 32,
+    kernel_size = c(3, 3), 
+    activation = 'relu',
+    input_shape = c(300, 300, 3)
+  ) %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>% 
+  layer_conv_2d(
+    filters = 32,
+    kernel_size = c(3, 3),
+    activation = "relu"
+  ) %>%
+  layer_max_pooling_2d(pool_size = c(3, 3)) %>% 
+  layer_dropout(rate = 0.25) %>% 
+  layer_conv_2d(
+    filters = 64,
+    kernel_size = c(3, 3), 
+    activation = 'relu') %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>% 
+  layer_dropout(rate = 0.5) %>% 
+  layer_flatten() %>% 
+  layer_dense(units = 128, activation = "relu") %>% 
+  layer_dropout(rate = 0.5) %>% 
+  layer_dense(units = 1, activation = "sigmoid")
+
+hot_dog_model %>% compile(
+  loss = "binary_crossentropy",
+  optimizer = optimizer_rmsprop(lr = 2e-5),
+  metrics = c("accuracy")
+)
+
+set.seed(1234)
+hot_dog_history <- hot_dog_model %>% 
+  fit_generator(
+    train_generator,
+    steps_per_epoch = 2000 / batch_size,
+    epochs = 15,
+    validation_data = test_generator,
+    validation_steps = 50,
+    verbose = 0
+  )
+```
+
+```{r}
+print(paste("Accuracy of the convolutional neural network on the test set:", round(max(hot_dog_history$metrics$val_accuracy), 4)))
+```
+
+With the convolutional neural network, I was able to achieve accuracy that is a little better than a coin toss, but unfortunately I'm stretching the limits of my machine's computational capabilities.
+
+### c. Could data augmentation techniques help with achieving higher predictive accuracy? Try some augmentations that you think make sense and compare.
+
+* Modify `train_datagen` with augmentation techniques
+
+```{r}
+train_datagen_aug <- image_data_generator(
+  rescale = 1/255,
+  rotation_range = 40,
+  width_shift_range = 0.2,
+  height_shift_range = 0.2,
+  shear_range = 0.2,
+  channel_shift_range = 0.2,
+  zoom_range = 0.1,
+  horizontal_flip = TRUE,
+  fill_mode = "nearest"
+)
+
+train_generator_aug <- flow_images_from_directory(
+  file.path(here(), "data/hot-dog-not-hot-dog/train/"),
+  train_datagen_aug,
+  target_size = image_size,
+  batch_size = batch_size,
+  class_mode = "binary"
+)
+```
+
+* Run and evaluate the same model from before with augmented data
+
+```{r}
+set.seed(1234)
+hot_dog_history_aug <- hot_dog_model %>% 
+  fit_generator(
+    train_generator_aug,
+    steps_per_epoch = 2000 / batch_size,
+    epochs = 15,
+    validation_data = test_generator,
+    validation_steps = 50,
+    verbose = 0
+  )
+
+print(paste("Accuracy on the test set with augmented data:", round(max(hot_dog_history_aug$metrics$val_accuracy), 4)))
+```
+
+It seems like data augmentation techniques do help with achieving higher predictive accuracy, but only by a small margin.
+
+### d. Try to rely on some pre-built neural networks to aid prediction. Can you achieve a better performance using transfer learning for this problem?
+
+For this exercise, I'm going to use the same augmented `train_generator_aug` as before, and my custom layers are two dense layers with a dropout layer with `rate = 0.5` between them.
+
+```{r, warning=FALSE}
+# Create the base pre-trained model
+tl_base_model <- application_mobilenet(
+  weights = "imagenet", 
+  include_top = FALSE,
+  input_shape = c(image_size, 3)
+)
+
+# Freeze all convolutional mobilenet layers
+freeze_weights(tl_base_model)
+
+# Add custom layers
+tl_predictions <- tl_base_model$output %>% 
+  layer_global_average_pooling_2d() %>% 
+  layer_dense(units = 128, activation = "relu") %>% 
+  layer_dropout(rate = 0.5) %>% 
+  layer_dense(units = 1, activation = "sigmoid")
+
+# Compile the train model
+tl_model <- keras_model(
+  inputs = tl_base_model$input, 
+  outputs = tl_predictions
+)
+
+tl_model %>% compile(
+  loss = "binary_crossentropy",
+  optimizer = optimizer_rmsprop(lr = 2e-5),
+  metrics = c("accuracy")
+)
+
+# Train the model
+tl_history <- tl_model %>% 
+  fit_generator(
+    train_generator_aug,
+    steps_per_epoch = 2000 / batch_size,
+    epochs = 1, 
+    validation_data = test_generator,
+    validation_steps = 50
+  )
+
+print(paste("Accuracy on the test set with transfer learning:", round(max(tl_history$metrics$val_accuracy), 4)))
+```
+
+I could achieve a better result with transfer learning with as few as 1 epochs, which means with more computational power, I would be able to predict whether a picture shows a hot dog or not a lot better. Again, unfortunately my capabilities are limited, but the gains of transfer learning are already apparent from this small example.
